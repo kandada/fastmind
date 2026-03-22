@@ -237,13 +237,13 @@ graph.add_edge("tools", "agent")
 
 | Example | Description |
 |---------|-------------|
-| [simple_chat.py](fastmind/examples/simple_chat.py) | Basic chat agent |
-| [simple_chat_with_tool.py](fastmind/examples/simple_chat_with_tool.py) | Agent with tool calling |
-| [streaming_chat.py](fastmind/examples/streaming_chat.py) | Real-time streaming output |
-| [human_in_loop.py](fastmind/examples/human_in_loop.py) | Human approval workflow |
-| [perception_loop.py](fastmind/examples/perception_loop.py) | Sensor data processing |
-| [drone.py](fastmind/examples/drone.py) | Timer-based perception |
-| [companion_bot.py](fastmind/examples/companion_bot.py) | Multi-agent conversation |
+| [simple_chat.py](examples/simple_chat.py) | Basic chat agent |
+| [simple_chat_with_tool.py](examples/simple_chat_with_tool.py) | Agent with tool calling |
+| [streaming_chat.py](examples/streaming_chat.py) | Real-time streaming output |
+| [human_in_loop.py](examples/human_in_loop.py) | Human approval workflow |
+| [perception_loop.py](examples/perception_loop.py) | Sensor data processing |
+| [drone.py](examples/drone.py) | Timer-based perception |
+| [companion_bot.py](examples/companion_bot.py) | Multi-agent conversation |
 
 Run an example:
 
