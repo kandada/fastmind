@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "fastmind"
-version = "0.1.1"
+version = "0.1.2"
 description = "A lightweight, event-driven multi-agent framework for embodied AI systems"
 readme = "README.md"
 requires-python = ">=3.10"

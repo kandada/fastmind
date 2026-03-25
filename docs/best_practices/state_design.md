@@ -21,6 +21,22 @@ state["user"]["profile"]["name"] = "Alice"
 state.setdefault("user", {})["profile"] = {"name": "Alice"}
 ```
 
+## 使用 State API 便捷方法
+
+```python
+# 添加消息
+state.add_message("user", "Hello")
+
+# 获取最后一条消息
+last = state.get_last_message()
+
+# 弹出所有消息
+all_msgs = state.pop_messages()
+
+# 获取消息数量
+count = state.get_message_count()
+```
+
 ## 使用约定 key
 
 推荐使用约定的 key 名称，便于工具和框架交互：

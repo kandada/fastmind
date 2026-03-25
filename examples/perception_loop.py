@@ -50,12 +50,25 @@ async def monitor_agent(state: dict, event: Event) -> dict:
 
 @app.agent(name="chat_agent")
 async def chat_agent(state: dict, event: Event) -> dict:
-    """聊天 Agent"""
+    """聊天 Agent，同时处理用户消息和定时器事件"""
     state.setdefault("messages", [])
+    state.setdefault("events", [])
+    state.setdefault("counts", {})
+
+    if event.type == "timer.tick":
+        count = event.payload.get("count", 0)
+        time_str = event.payload.get("time", "")
+        state["events"].append(f"[{time_str}] Timer #{count}")
+        state["counts"]["timer"] = count
+        state["last_update"] = datetime.now().strftime("%H:%M:%S")
+        return state
 
     if event.type == "user.message":
         text = event.payload.get("text", "")
-        state["messages"].append({"role": "user", "content": text})
+
+        last_msg = state["messages"][-1] if state["messages"] else None
+        if not last_msg or last_msg.get("content") != text or last_msg.get("role") != "user":
+            state["messages"].append({"role": "user", "content": text})
 
         if text.lower() == "status":
             timer_count = state.get("counts", {}).get("timer", 0)
@@ -83,19 +96,10 @@ async def chat_agent(state: dict, event: Event) -> dict:
     return state
 
 
-def route_by_event(state: dict, event: Event) -> str:
-    """根据事件类型路由"""
-    if event.type == "timer.tick":
-        return "monitor"
-    return "chat"
-
-
 graph = Graph()
 graph.add_node("chat", chat_agent)
-graph.add_node("monitor", monitor_agent)
 
 graph.add_edge("__start__", "chat")
-graph.add_edge("monitor", "chat")
 
 graph.set_entry_point("chat")
 app.register_graph("main", graph)

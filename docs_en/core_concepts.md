@@ -15,6 +15,22 @@ async def chat(state, event):
     return state
 ```
 
+State API convenience methods:
+
+```python
+# Add message (deduplicated)
+state.add_message("user", "Hello")
+
+# Get last message
+last_msg = state.get_last_message()
+
+# Pop all messages
+all_messages = state.pop_messages()
+
+# Get message count
+count = state.get_message_count()
+```
+
 Common conventions (optional):
 - `messages`: Conversation history
 - `tool_calls`: Pending tool calls

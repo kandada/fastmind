@@ -67,3 +67,12 @@ PYTHONPATH=. python3 examples/simple_chat.py
 - [Quick Start](quickstart.md)
 - [Core Concepts](core_concepts.md)
 - [API Reference](api_reference.md)
+- [Examples](examples.md)
+- Advanced Guides
+  - [Streaming](advanced/streaming.md)
+  - [Human-in-the-Loop](advanced/human_in_loop.md)
+  - [Perception Loop](advanced/perception_loop.md)
+  - [Subgraph](advanced/subgraph.md)
+- Best Practices
+  - [Tool Design](best_practices/tool_design.md)
+  - [State Design](best_practices/state_design.md)

@@ -94,6 +94,9 @@ class FastMind:
         Returns:
             装饰器函数
 
+        Raises:
+            TypeError: 如果装饰的函数没有返回 Graph 实例
+
         用法示例:
             @app.graph(name="main")
             def create_graph():
@@ -104,8 +107,13 @@ class FastMind:
 
         def decorator(func: Callable) -> Callable:
             graph_name = name or func.__name__
-            graph = func()
-            self._graphs[graph_name] = graph
+            result = func()
+            if not isinstance(result, Graph):
+                raise TypeError(
+                    f"@app.graph decorated function '{func.__name__}' "
+                    f"must return a Graph instance, got {type(result).__name__}"
+                )
+            self._graphs[graph_name] = result
             return func
 
         return decorator
@@ -145,11 +153,14 @@ class FastMind:
         """装饰器：注册感知循环
 
         Args:
-            interval: 触发间隔（秒）
+            interval: 触发间隔（秒），必须大于 0
             name: 感知名称
 
         Returns:
             装饰器函数
+
+        Raises:
+            ValueError: 如果 interval <= 0
 
         用法示例:
             @app.perception(interval=5.0, name="sensor_monitor")
@@ -159,6 +170,8 @@ class FastMind:
                     yield Event(type="sensor.data", payload=data, session_id="system")
                     await asyncio.sleep(5.0)
         """
+        if interval <= 0:
+            raise ValueError(f"perception interval must be positive, got {interval}")
 
         def decorator(func: Callable) -> Callable:
             self._perceptions.append((name or func.__name__, func, interval))

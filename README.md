@@ -238,12 +238,15 @@ graph.add_edge("tools", "agent")
 | Example | Description |
 |---------|-------------|
 | [simple_chat.py](examples/simple_chat.py) | Basic chat agent |
-| [simple_chat_with_tool.py](examples/simple_chat_with_tool.py) | Agent with tool calling |
+| [simple_chat_with_tool.py](examples/simple_chat_with_tool.py) | Agent with tool calling (ReAct) |
 | [streaming_chat.py](examples/streaming_chat.py) | Real-time streaming output |
 | [human_in_loop.py](examples/human_in_loop.py) | Human approval workflow |
 | [perception_loop.py](examples/perception_loop.py) | Sensor data processing |
 | [drone.py](examples/drone.py) | Timer-based perception |
 | [companion_bot.py](examples/companion_bot.py) | Multi-agent conversation |
+| [humanoid_robot.py](examples/humanoid_robot.py) | Multi-tool collaboration |
+| [sleep_assessment.py](examples/sleep_assessment.py) | Multi-state HITL flow |
+| [comprehensive_assistant.py](examples/comprehensive_assistant.py) | Full-featured assistant |
 
 Run an example:
 

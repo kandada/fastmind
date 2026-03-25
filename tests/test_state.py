@@ -47,6 +47,91 @@ class TestState:
 
         assert state["user"]["profile"]["name"] == "Bob"
 
+    def test_add_message(self):
+        """测试 add_message 方法"""
+        state = State()
+        state.add_message("messages", "user", "hello")
+        state.add_message("messages", "assistant", "hi")
+
+        assert len(state["messages"]) == 2
+        assert state["messages"][0] == {"role": "user", "content": "hello"}
+        assert state["messages"][1] == {"role": "assistant", "content": "hi"}
+
+    def test_add_message_with_extra_fields(self):
+        """测试 add_message 带额外字段"""
+        state = State()
+        state.add_message("tool_results", role="system", content="result", tool_name="test")
+
+        assert state["tool_results"][0]["tool_name"] == "test"
+
+    def test_add_message_chain(self):
+        """测试 add_message 链式调用"""
+        state = State()
+        result = state.add_message("messages", "user", "hello").add_message(
+            "messages", "assistant", "hi"
+        )
+
+        assert result is state
+        assert len(state["messages"]) == 2
+
+    def test_add_message_if_new(self):
+        """测试 add_message_if_new 方法"""
+        state = State()
+        state.add_message("messages", "user", "hello")
+
+        result1 = state.add_message_if_new("messages", "user", "hello")
+        assert result1 is False
+        assert len(state["messages"]) == 1
+
+        result2 = state.add_message_if_new("messages", "user", "world")
+        assert result2 is True
+        assert len(state["messages"]) == 2
+        assert state["messages"][1]["content"] == "world"
+
+    def test_get_last_message(self):
+        """测试 get_last_message 方法"""
+        state = State()
+        state.add_message("messages", "user", "hello")
+        state.add_message("messages", "assistant", "hi")
+        state.add_message("messages", "user", "third")
+
+        last = state.get_last_message("messages")
+        assert last["content"] == "third"
+
+        last_user = state.get_last_message("messages", role="user")
+        assert last_user["content"] == "third"
+
+        last_assistant = state.get_last_message("messages", role="assistant")
+        assert last_assistant["content"] == "hi"
+
+    def test_get_last_message_empty(self):
+        """测试空消息列表"""
+        state = State()
+        assert state.get_last_message("messages") is None
+
+    def test_pop_messages(self):
+        """测试 pop_messages 方法"""
+        state = State()
+        state.add_message("messages", "user", "hello")
+        state.add_message("messages", "assistant", "hi")
+        state.add_message("messages", "user", "world")
+
+        popped = state.pop_messages("messages", 2)
+        assert len(popped) == 2
+        assert len(state["messages"]) == 1
+        assert state["messages"][0]["content"] == "hello"
+
+    def test_get_message_count(self):
+        """测试 get_message_count 方法"""
+        state = State()
+        assert state.get_message_count("messages") == 0
+
+        state.add_message("messages", "user", "hello")
+        assert state.get_message_count("messages") == 1
+
+        state.add_message("messages", "assistant", "hi")
+        assert state.get_message_count("messages") == 2
+
 
 class TestStateKey:
     """StateKey 常量测试"""

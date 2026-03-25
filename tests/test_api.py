@@ -464,15 +464,63 @@ class TestFastMindAPIEdgeCases:
 
     @pytest.mark.asyncio
     async def test_stream_events_nonexistent_session(self):
-        """测试获取不存在会话的事件流"""
+        """测试获取不存在会话的事件流应抛出异常"""
         app = FastMind()
         api = FastMindAPI(app)
         await api.start()
 
-        events = []
-        async for ev in api.stream_events("nonexistent"):
-            events.append(ev)
+        with pytest.raises(RuntimeError, match="does not exist"):
+            async for _ in api.stream_events("nonexistent"):
+                pass
 
-        assert len(events) == 0
+        await api.stop()
+
+    @pytest.mark.asyncio
+    async def test_push_event_none_raises(self):
+        """测试 push_event 接收 None 应抛出异常"""
+        app = FastMind()
+        api = FastMindAPI(app)
+        await api.start()
+
+        with pytest.raises(ValueError, match="event cannot be None"):
+            await api.push_event("s1", None)
+
+        await api.stop()
+
+    @pytest.mark.asyncio
+    async def test_resume_nonexistent_session_raises(self):
+        """测试恢复不存在的会话应抛出异常"""
+        app = FastMind()
+        api = FastMindAPI(app)
+        await api.start()
+
+        with pytest.raises(ValueError, match="does not exist"):
+            await api.resume_session("nonexistent", "input")
+
+        await api.stop()
+
+    @pytest.mark.asyncio
+    async def test_resume_non_interrupted_session_raises(self):
+        """测试恢复非中断状态的会话应抛出异常"""
+        from fastmind import Graph
+
+        app = FastMind()
+
+        async def agent(state, event):
+            return state
+
+        graph = Graph()
+        graph.add_node("start", agent)
+        graph.set_entry_point("start")
+        app.register_graph("main", graph)
+
+        api = FastMindAPI(app)
+        await api.start()
+
+        await api.push_event("s1", Event("test", {}, "s1"))
+        await asyncio.sleep(0.2)
+
+        with pytest.raises(RuntimeError, match="is not interrupted"):
+            await api.resume_session("s1", "input")
 
         await api.stop()

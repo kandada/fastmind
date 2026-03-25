@@ -15,6 +15,22 @@ async def chat(state, event):
     return state
 ```
 
+State API 便捷方法：
+
+```python
+# 添加消息（去重）
+state.add_message("user", "Hello")
+
+# 获取最后一条消息
+last_msg = state.get_last_message()
+
+# 弹出所有消息
+all_messages = state.pop_messages()
+
+# 获取消息数量
+count = state.get_message_count()
+```
+
 常用约定（可选）：
 - `messages`: 对话历史
 - `tool_calls`: 待执行的工具调用

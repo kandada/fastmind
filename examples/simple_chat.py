@@ -26,7 +26,10 @@ async def chat_agent(state: dict, event: Event) -> dict:
     """聊天 Agent"""
     state.setdefault("messages", [])
     user_text = event.payload.get("text", "")
-    state["messages"].append({"role": "user", "content": user_text})
+
+    last_msg = state["messages"][-1] if state["messages"] else None
+    if not last_msg or last_msg.get("content") != user_text or last_msg.get("role") != "user":
+        state["messages"].append({"role": "user", "content": user_text})
 
     if user_text.lower() == "quit":
         state["messages"].append({"role": "assistant", "content": "再见！"})

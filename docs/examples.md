@@ -79,3 +79,11 @@ PYTHONPATH=. python3 examples/sleep_assessment.py
 ```bash
 PYTHONPATH=. python3 examples/drone.py
 ```
+
+### comprehensive_assistant.py
+
+全功能助手示例，展示集成了工具调用、流式输出、人机交互的完整助手应用。
+
+```bash
+PYTHONPATH=. python3 examples/comprehensive_assistant.py
+```

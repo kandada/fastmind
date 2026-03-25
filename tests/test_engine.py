@@ -52,11 +52,11 @@ class TestSession:
 
         session = Session("test_session", graph, app)
         await session.start()
-        assert session._running is True
+        assert session.is_running is True
         assert session._task is not None
 
         await session.stop()
-        assert session._running is False
+        assert session.session_state == Session.STATE_STOPPED
 
     @pytest.mark.asyncio
     async def test_session_push_event(self):
@@ -179,6 +179,57 @@ class TestSession:
         session._interrupted = True
 
         assert session._interrupted is True
+
+    @pytest.mark.asyncio
+    async def test_session_state_properties(self):
+        """测试 Session 状态属性"""
+        app = FastMind()
+        graph = Graph()
+        session = Session("test_session", graph, app)
+
+        assert session.session_state == Session.STATE_CREATED
+        assert session.is_alive is True
+        assert session.is_running is False
+
+        await session.start()
+        assert session.is_running is True
+        assert session.is_alive is True
+
+        await session.stop()
+        assert session.session_state == Session.STATE_STOPPED
+        assert session.is_alive is False
+
+    @pytest.mark.asyncio
+    async def test_session_idempotency(self):
+        """测试 Session 幂等性保证"""
+        app = FastMind()
+        graph = Graph()
+        session = Session("test_session", graph, app)
+
+        event1 = Event("test.type", {}, "test_session")
+        assert session._is_event_processed(event1) is False
+
+        session._record_event(event1)
+        assert session._is_event_processed(event1) is True
+
+        event2 = Event("test.type", {}, "test_session")
+        assert session._is_event_processed(event2) is False
+
+    @pytest.mark.asyncio
+    async def test_session_resume_from_stopped(self):
+        """测试从 stopped 状态恢复会话"""
+        app = FastMind()
+        graph = Graph()
+        session = Session("test_session", graph, app)
+
+        await session.start()
+        assert session.is_running is True
+
+        await session.stop()
+        assert session.session_state == Session.STATE_STOPPED
+
+        session._state = Session.STATE_CREATED
+        assert session.is_alive is True
 
 
 class TestEngine:

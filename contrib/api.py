@@ -92,12 +92,18 @@ class FastMindAPI:
 
         Args:
             session_id: 会话 ID
-            event: 事件
+            event: 事件，不能为 None
             graph_name: 图名称
 
         Returns:
             Session 实例
+
+        Raises:
+            ValueError: 如果 event 为 None
+            RuntimeError: 如果会话已停止
         """
+        if event is None:
+            raise ValueError("event cannot be None")
         logger.debug(f"Push event {event.type} to session {session_id}")
         return await self._engine.push_event(session_id, event, graph_name)
 
@@ -117,6 +123,9 @@ class FastMindAPI:
         Yields:
             Event: 输出事件
 
+        Raises:
+            RuntimeError: 如果会话不存在或已停止
+
         用法:
             async for ev in fm_api.stream_events("user_123"):
                 if ev.type == "stream.chunk":
@@ -126,15 +135,20 @@ class FastMindAPI:
         """
         session = self._engine.get_session(session_id)
         if not session:
-            return
+            raise RuntimeError(f"Session '{session_id}' does not exist")
 
-        while self._running:
+        if not session.is_alive:
+            raise RuntimeError(f"Session '{session_id}' is stopped")
+
+        while self._running and session.is_alive:
             try:
-                event = await session.output_queue.get()
+                event = await asyncio.wait_for(session.output_queue.get(), timeout=1.0)
                 if event_types is None or event.type in event_types:
                     yield event
                 if event.type in ("stream.end", "error", "interrupt"):
                     break
+            except asyncio.TimeoutError:
+                continue
             except asyncio.CancelledError:
                 break
 
@@ -159,7 +173,21 @@ class FastMindAPI:
         Args:
             session_id: 会话 ID
             user_input: 用户输入
+
+        Raises:
+            ValueError: 如果会话不存在
+            RuntimeError: 如果会话不是中断状态
         """
+        session = self._engine.get_session(session_id)
+        if not session:
+            raise ValueError(f"Session '{session_id}' does not exist")
+
+        if session.session_state != Session.STATE_INTERRUPTED:
+            raise RuntimeError(
+                f"Session '{session_id}' is not interrupted "
+                f"(current state: {session.session_state})"
+            )
+
         await self._engine.resume_session(session_id, user_input)
 
     def get_session(self, session_id: str) -> Optional[Session]:

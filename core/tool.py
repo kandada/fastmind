@@ -259,12 +259,4 @@ class StreamingToolNode(ToolNode):
         if "tool_calls" in state:
             del state["tool_calls"]
 
-        output_events.append(
-            Event(
-                type="stream.end",
-                payload={"content": "Tools executed"},
-                session_id=event.session_id,
-            )
-        )
-
         return state, output_events

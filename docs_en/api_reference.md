@@ -108,6 +108,135 @@ Set entry point
 graph.set_entry_point("start")
 ```
 
+### graph.detect_cycles()
+
+Detect cycles in the graph
+
+```python
+cycles = graph.detect_cycles()
+if cycles:
+    print(f"Cycle detected: {cycles}")
+```
+
+### graph.validate()
+
+Validate graph configuration and emit warnings
+
+```python
+graph.validate()
+# Outputs configuration warnings (if any)
+```
+
+### graph.iteration_limit
+
+Set maximum iterations to prevent infinite loops (default 999)
+
+```python
+graph.iteration_limit = 100
+```
+
+## Session
+
+Session class
+
+```python
+session = api.get_session("user1")
+```
+
+### session.state
+
+Get session state
+
+```python
+state = session.state
+```
+
+### session.session_state
+
+Get session state constant (STATE_CREATED, STATE_RUNNING, STATE_IDLE, STATE_INTERRUPTED, STATE_STOPPED)
+
+```python
+if session.session_state == STATE_RUNNING:
+    print("Session running")
+```
+
+### session.is_running
+
+Check if session is running
+
+```python
+if session.is_running:
+    print("running")
+```
+
+### session.is_alive
+
+Check if session is alive (not stopped)
+
+```python
+if session.is_alive:
+    print("alive")
+```
+
+### session.wait_for_output(timeout=None)
+
+Wait for output event
+
+```python
+await session.wait_for_output(timeout=5.0)
+```
+
+## State API
+
+State convenience methods
+
+```python
+state = session.state
+```
+
+### state.add_message(role, content)
+
+Add message (if message doesn't exist)
+
+```python
+state.add_message("user", "Hello")
+```
+
+### state.add_message_if_new(role, content)
+
+Add message only if it doesn't exist
+
+```python
+state.add_message_if_new("user", "Hello")
+```
+
+### state.get_last_message(role=None)
+
+Get last message
+
+```python
+last = state.get_last_message()
+last_user = state.get_last_message("user")
+```
+
+### state.pop_messages(role=None)
+
+Pop all messages
+
+```python
+all = state.pop_messages()
+user_msgs = state.pop_messages("user")
+```
+
+### state.get_message_count(role=None)
+
+Get message count
+
+```python
+count = state.get_message_count()
+user_count = state.get_message_count("user")
+```
+
 ## FastMindAPI
 
 External API interface

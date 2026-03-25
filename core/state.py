@@ -15,6 +15,9 @@ class State(dict):
         state["messages"].append({"role": "user", "content": "hello"})
         state.setdefault("count", 0)
         state["count"] += 1
+
+    也推荐使用高层 API 来管理消息历史:
+        state.add_message("messages", "user", "hello")
     """
 
     def __init__(self, initial: Optional[Dict[str, Any]] = None, **kwargs):
@@ -72,6 +75,107 @@ class State(dict):
                 target[key] = {}
             target = target[key]
         target[keys[-1]] = value
+
+    def add_message(
+        self,
+        key: str = "messages",
+        role: str = "user",
+        content: str = "",
+        **extra_fields,
+    ) -> "State":
+        """添加消息到列表，自动初始化
+
+        自动避免重复添加相同的 user 消息（在 ReAct 循环中常见问题）。
+
+        Args:
+            key: 消息列表的 key，默认 "messages"
+            role: 消息角色，如 "user", "assistant", "system"
+            content: 消息内容
+            **extra_fields: 其他字段，如 "name", "tool_call_id" 等
+
+        Returns:
+            self，支持链式调用
+
+        用法示例:
+            state.add_message("messages", "user", "hello")
+            state.add_message("messages", "assistant", "hi!")
+            state.add_message("tool_results", role="system", content="[tool] result")
+        """
+        self.setdefault(key, [])
+        message = {"role": role, "content": content, **extra_fields}
+        self[key].append(message)
+        return self
+
+    def add_message_if_new(
+        self,
+        key: str = "messages",
+        role: str = "user",
+        content: str = "",
+        **extra_fields,
+    ) -> bool:
+        """添加消息，仅当与最后一条不完全相同时才添加
+
+        适用于避免在 ReAct 循环中重复添加相同的 user 消息。
+
+        Args:
+            key: 消息列表的 key，默认 "messages"
+            role: 消息角色
+            content: 消息内容
+            **extra_fields: 其他字段
+
+        Returns:
+            True 如果添加了新消息，False 如果跳过了
+        """
+        self.setdefault(key, [])
+        message = {"role": role, "content": content, **extra_fields}
+
+        last = self[key][-1] if self[key] else None
+        if last and last.get("role") == role and last.get("content") == content:
+            return False
+
+        self[key].append(message)
+        return True
+
+    def get_last_message(self, key: str = "messages", role: Optional[str] = None) -> Optional[Dict]:
+        """获取最后一条消息
+
+        Args:
+            key: 消息列表的 key，默认 "messages"
+            role: 可选，按角色过滤
+
+        Returns:
+            最后一条消息或 None
+        """
+        messages = self.get(key, [])
+        if not messages:
+            return None
+        if role is None:
+            return messages[-1]
+        for msg in reversed(messages):
+            if msg.get("role") == role:
+                return msg
+        return None
+
+    def pop_messages(self, key: str = "messages", count: int = 1) -> list:
+        """弹出最后 count 条消息
+
+        用于需要撤销操作的场景。
+
+        Args:
+            key: 消息列表的 key，默认 "messages"
+            count: 弹出的消息数量
+
+        Returns:
+            被弹出的消息列表
+        """
+        messages = self.get(key, [])
+        popped = messages[-count:] if count > 0 else []
+        self[key] = messages[:-count] if count > 0 else messages
+        return popped
+
+    def get_message_count(self, key: str = "messages") -> int:
+        """获取消息数量"""
+        return len(self.get(key, []))
 
 
 class StateKey:

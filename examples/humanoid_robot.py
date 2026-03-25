@@ -61,7 +61,10 @@ async def voice_agent(state: dict, event: Event) -> dict:
 
     if event.type == "user.message":
         text = event.payload.get("text", "")
-        state["messages"].append({"role": "user", "content": text})
+
+        last_msg = state["messages"][-1] if state["messages"] else None
+        if not last_msg or last_msg.get("content") != text or last_msg.get("role") != "user":
+            state["messages"].append({"role": "user", "content": text})
 
         # 处理工具结果
         if state.get("tool_results"):

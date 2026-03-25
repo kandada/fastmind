@@ -98,5 +98,38 @@ class TestFastMind:
         assert "t1" in repr_str
         assert "a1" in repr_str
 
+    def test_graph_decorator_validates_return_type(self, app):
+        """测试 graph 装饰器验证返回值类型"""
+        with pytest.raises(TypeError, match="must return a Graph instance"):
+
+            @app.graph(name="invalid")
+            def bad_graph():
+                return "not a graph"
+
+    def test_graph_decorator_success(self, app):
+        """测试 graph 装饰器成功注册"""
+
+        @app.graph(name="valid")
+        def good_graph():
+            g = Graph()
+            g.add_node("start", lambda s, e: s)
+            return g
+
+        assert "valid" in app._graphs
+
+    def test_perception_interval_validation(self, app):
+        """测试 perception interval 必须为正数"""
+        with pytest.raises(ValueError, match="must be positive"):
+
+            @app.perception(interval=0)
+            async def zero_interval(app):
+                yield Event("test", {}, "system")
+
+        with pytest.raises(ValueError, match="must be positive"):
+
+            @app.perception(interval=-1)
+            async def negative_interval(app):
+                yield Event("test", {}, "system")
+
 
 import asyncio

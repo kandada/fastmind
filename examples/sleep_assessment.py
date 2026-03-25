@@ -122,6 +122,20 @@ async def skip_node(state: dict, event: Event) -> dict:
     return state
 
 
+async def confirm_node(state: dict, event: Event) -> dict:
+    """确认节点，处理中断恢复"""
+    user_input = event.payload.get("user_input", "")
+    if "是" in user_input or "确认" in user_input or "好" in user_input:
+        state["generate_report"] = True
+        state["stage"] = "generate"
+        state["messages"] = ["正在生成报告..."]
+    else:
+        state["generate_report"] = False
+        state["stage"] = "end"
+        state["messages"] = ["好的，评估结束。"]
+    return state
+
+
 def need_confirm(state: dict, event: Event) -> str:
     """判断是否需要确认"""
     return "ask_confirm" if state.get("need_approval") else "evaluate"
@@ -186,6 +200,7 @@ def route_to_evaluate(state: dict, event: Event) -> str:
 graph = Graph()
 graph.add_node("assessment", assessment_agent)
 graph.add_node("ask_confirm", ask_confirm_node)
+graph.add_node("confirm", confirm_node)
 graph.add_node("skip", skip_node)
 graph.add_node("evaluate", evaluate_agent)
 graph.add_node("tools", tool_node)

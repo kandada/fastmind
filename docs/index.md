@@ -67,3 +67,12 @@ PYTHONPATH=. python3 examples/simple_chat.py
 - [快速入门](quickstart.md)
 - [核心概念](core_concepts.md)
 - [API 参考](api_reference.md)
+- [示例](examples.md)
+- 进阶指南
+  - [流式输出](advanced/streaming.md)
+  - [人工介入](advanced/human_in_loop.md)
+  - [感知循环](advanced/perception_loop.md)
+  - [子图](advanced/subgraph.md)
+- 最佳实践
+  - [工具设计](best_practices/tool_design.md)
+  - [状态设计](best_practices/state_design.md)

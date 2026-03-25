@@ -238,12 +238,15 @@ graph.add_edge("tools", "agent")
 | 示例 | 描述 |
 |------|------|
 | [simple_chat.py](examples/simple_chat.py) | 基础聊天 |
-| [simple_chat_with_tool.py](examples/simple_chat_with_tool.py) | 带工具调用的聊天 |
+| [simple_chat_with_tool.py](examples/simple_chat_with_tool.py) | 工具调用（ReAct）|
 | [streaming_chat.py](examples/streaming_chat.py) | 实时流式输出 |
 | [human_in_loop.py](examples/human_in_loop.py) | 人工审批工作流 |
 | [perception_loop.py](examples/perception_loop.py) | 传感器数据处理 |
 | [drone.py](examples/drone.py) | 定时感知 |
 | [companion_bot.py](examples/companion_bot.py) | 多智能体对话 |
+| [humanoid_robot.py](examples/humanoid_robot.py) | 多工具协作 |
+| [sleep_assessment.py](examples/sleep_assessment.py) | 多状态 HITL 流程 |
+| [comprehensive_assistant.py](examples/comprehensive_assistant.py) | 全功能助手 |
 
 运行示例：
 

@@ -108,6 +108,135 @@ graph.add_interrupt("confirm", "确认执行？", "yes", "no")
 graph.set_entry_point("start")
 ```
 
+### graph.detect_cycles()
+
+检测图中是否存在循环
+
+```python
+cycles = graph.detect_cycles()
+if cycles:
+    print(f"检测到循环: {cycles}")
+```
+
+### graph.validate()
+
+验证图配置并发出警告
+
+```python
+graph.validate()
+# 输出配置警告（如有）
+```
+
+### graph.iteration_limit
+
+设置最大迭代次数，防止无限循环（默认 999）
+
+```python
+graph.iteration_limit = 100
+```
+
+## Session
+
+会话类
+
+```python
+session = api.get_session("user1")
+```
+
+### session.state
+
+获取会话状态
+
+```python
+state = session.state
+```
+
+### session.session_state
+
+获取会话状态常量（STATE_CREATED, STATE_RUNNING, STATE_IDLE, STATE_INTERRUPTED, STATE_STOPPED）
+
+```python
+if session.session_state == STATE_RUNNING:
+    print("会话运行中")
+```
+
+### session.is_running
+
+会话是否正在运行
+
+```python
+if session.is_running:
+    print("running")
+```
+
+### session.is_alive
+
+会话是否存活（未停止）
+
+```python
+if session.is_alive:
+    print("alive")
+```
+
+### session.wait_for_output(timeout=None)
+
+等待输出事件
+
+```python
+await session.wait_for_output(timeout=5.0)
+```
+
+## State API
+
+状态便捷方法
+
+```python
+state = session.state
+```
+
+### state.add_message(role, content)
+
+添加消息（如果消息不存在则添加）
+
+```python
+state.add_message("user", "Hello")
+```
+
+### state.add_message_if_new(role, content)
+
+仅当消息不存在时添加
+
+```python
+state.add_message_if_new("user", "Hello")
+```
+
+### state.get_last_message(role=None)
+
+获取最后一条消息
+
+```python
+last = state.get_last_message()
+last_user = state.get_last_message("user")
+```
+
+### state.pop_messages(role=None)
+
+弹出所有消息
+
+```python
+all = state.pop_messages()
+user_msgs = state.pop_messages("user")
+```
+
+### state.get_message_count(role=None)
+
+获取消息数量
+
+```python
+count = state.get_message_count()
+user_count = state.get_message_count("user")
+```
+
 ## FastMindAPI
 
 对外 API 接口

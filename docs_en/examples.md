@@ -79,3 +79,11 @@ Drone example demonstrating timer-based perception and flight control.
 ```bash
 PYTHONPATH=. python3 examples/drone.py
 ```
+
+### comprehensive_assistant.py
+
+Full-featured assistant example demonstrating an integrated assistant with tool calling, streaming output, and human-in-the-loop.
+
+```bash
+PYTHONPATH=. python3 examples/comprehensive_assistant.py
+```

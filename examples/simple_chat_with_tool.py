@@ -52,115 +52,48 @@ async def calculate(expression: str) -> str:
 
 
 @app.agent(name="chat_agent", tools=["get_weather", "get_time", "calculate"])
-async def chat_agent(state: dict, event: Event) -> dict:
+async def chat_agent(state: dict, event: Event) -> tuple[dict, list[Event]]:
     """聊天 Agent，支持工具调用"""
     state.setdefault("messages", [])
     user_text = event.payload.get("text", "")
+    output_events = []
 
-    # 避免在 ReAct 循环中重复添加 user 消息
-    last_msg = state["messages"][-1] if state["messages"] else None
-    if not last_msg or last_msg.get("content") != user_text or last_msg.get("role") != "user":
+    # 处理工具结果
+    if state.get("tool_results"):
+        for result in state["tool_results"]:
+            state["messages"].append(
+                {
+                    "role": "tool",
+                    "tool_call_id": result["tool_call_id"],
+                    "content": str(result["result"]),
+                }
+            )
+        del state["tool_results"]
+    else:
+        # 只有在没有工具结果时才添加用户消息（避免重复添加）
         state["messages"].append({"role": "user", "content": user_text})
 
     if user_text.lower() == "quit":
         state["messages"].append({"role": "assistant", "content": "再见！"})
         state["quit"] = True
-        return state
-
-    # 处理工具结果
-    if state.get("tool_results"):
-        for result in state["tool_results"]:
-            state["messages"].append(
-                {"role": "system", "content": f"[{result['tool_name']}] {result['result']}"}
-            )
-        del state["tool_results"]
-        return state
+        output_events.append(Event(type="stream.end", payload={}, session_id=event.session_id))
+        return state, output_events
 
     # 调用 LLM
+    # 注意：如果有待执行的 tool_calls，先不添加 LLM 的回复内容，等工具执行完再说
     api_key = os.getenv("LLM_API_KEY")
     api_url = os.getenv("LLM_API_URL", "https://api.deepseek.com/v1")
     model = os.getenv("LLM_MODEL_NAME", "deepseek-chat")
 
     if not api_key:
         state["messages"].append({"role": "assistant", "content": "错误: 未设置 LLM_API_KEY"})
-        return state
+        output_events.append(Event(type="stream.end", payload={}, session_id=event.session_id))
+        return state, output_events
 
     try:
         from openai import AsyncOpenAI
 
         client = AsyncOpenAI(api_key=api_key, base_url=api_url)
-
-        response = await client.chat.completions.create(
-            model=model,
-            messages=state["messages"],
-            tools=app.get_tool_schemas(),
-        )
-
-        msg = response.choices[0].message
-
-        # 优先使用 content（如果是有效回答），忽略 tool_calls
-        # 因为 LLM 有时会同时返回 content 和 tool_calls
-        if msg.content and msg.content.strip():
-            state["messages"].append({"role": "assistant", "content": msg.content})
-            # 清除可能存在的 tool_calls
-            if "tool_calls" in state:
-                del state["tool_calls"]
-        elif msg.tool_calls:
-            state["tool_calls"] = []
-            for tc in msg.tool_calls:
-                if hasattr(tc, "function"):
-                    state["tool_calls"].append(
-                        {
-                            "id": tc.id,
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
-                            },
-                        }
-                    )
-                elif isinstance(tc, dict):
-                    state["tool_calls"].append(tc)
-
-    except Exception as e:
-        state["messages"].append({"role": "assistant", "content": f"错误: {str(e)}"})
-
-    return state
-
-    # 处理工具结果
-    if state.get("tool_results"):
-        for result in state["tool_results"]:
-            state["messages"].append(
-                {"role": "system", "content": f"[{result['tool_name']}] {result['result']}"}
-            )
-        del state["tool_results"]
-        return state
-
-    # 调用 LLM
-    api_key = os.getenv("LLM_API_KEY")
-    api_url = os.getenv("LLM_API_URL", "https://api.deepseek.com/v1")
-    model = os.getenv("LLM_MODEL_NAME", "deepseek-chat")
-
-    if not api_key:
-        state["messages"].append({"role": "assistant", "content": "错误: 未设置 LLM_API_KEY"})
-        return state
-
-    try:
-        from openai import AsyncOpenAI
-
-        client = AsyncOpenAI(api_key=api_key, base_url=api_url)
-
-        # 清理之前连续的系统工具结果消息，避免 LLM 继续调用无关工具
-        messages = state["messages"]
-        while len(messages) >= 3:
-            if (
-                messages[-1].get("role") == "system"
-                and messages[-2].get("role") == "assistant"
-                and messages[-3].get("role") == "user"
-            ):
-                messages = messages[:-3]
-            else:
-                break
-        state["messages"] = messages
 
         response = await client.chat.completions.create(
             model=model,
@@ -172,26 +105,45 @@ async def chat_agent(state: dict, event: Event) -> dict:
 
         if msg.tool_calls:
             state["tool_calls"] = []
+            tool_calls_for_msg = []
             for tc in msg.tool_calls:
                 if hasattr(tc, "function"):
-                    state["tool_calls"].append(
-                        {
-                            "id": tc.id,
-                            "function": {
-                                "name": tc.function.name,
-                                "arguments": tc.function.arguments,
-                            },
-                        }
-                    )
+                    tc_dict = {
+                        "id": tc.id,
+                        "type": "function",
+                        "function": {
+                            "name": tc.function.name,
+                            "arguments": tc.function.arguments,
+                        },
+                    }
+                    state["tool_calls"].append(tc_dict)
+                    tool_calls_for_msg.append(tc_dict)
                 elif isinstance(tc, dict):
-                    state["tool_calls"].append(tc)
+                    tc_dict = dict(tc)
+                    tc_dict.setdefault("type", "function")
+                    state["tool_calls"].append(tc_dict)
+                    tool_calls_for_msg.append(tc_dict)
+            # 添加带有 tool_calls 的 assistant 消息到历史
+            assistant_msg = {"role": "assistant", "content": msg.content or ""}
+            if tool_calls_for_msg:
+                assistant_msg["tool_calls"] = tool_calls_for_msg
+            state["messages"].append(assistant_msg)
+            # 有 tool_calls 会继续到 tools 节点，所以这里不发 stream.end
         elif msg.content:
+            # 只有在没有 tool_calls 时才添加回复内容
             state["messages"].append({"role": "assistant", "content": msg.content})
+            # 发送流式事件
+            for char in msg.content:
+                output_events.append(
+                    Event(type="stream.chunk", payload={"delta": char}, session_id=event.session_id)
+                )
+            output_events.append(Event(type="stream.end", payload={}, session_id=event.session_id))
 
     except Exception as e:
         state["messages"].append({"role": "assistant", "content": f"错误: {str(e)}"})
+        output_events.append(Event(type="stream.end", payload={}, session_id=event.session_id))
 
-    return state
+    return state, output_events
 
 
 tool_node = ToolNode(app.get_tools())
@@ -226,6 +178,19 @@ async def main():
 
     session_id = "user_001"
 
+    async def wait_for_response():
+        """等待并收集 LLM 的回复"""
+        response_text = ""
+        async for ev in fm_api.stream_events(session_id):
+            if ev.type == "stream.chunk":
+                response_text += ev.payload.get("delta", "")
+            elif ev.type == "stream.end":
+                break
+            elif ev.type == "error":
+                response_text = f"错误: {ev.payload.get('error', '未知错误')}"
+                break
+        return response_text
+
     while True:
         try:
             user_input = input("\n你: ").strip()
@@ -235,17 +200,12 @@ async def main():
             event = Event("user.message", {"text": user_input}, session_id)
             await fm_api.push_event(session_id, event)
 
-            # 等待处理完成
-            await asyncio.sleep(5)
+            response = await wait_for_response()
+            if response:
+                print(f"Bot: {response}")
 
-            state = fm_api.get_state(session_id)
-            if state and "messages" in state:
-                last_msg = state["messages"][-1]
-                if last_msg["role"] in ("assistant", "system"):
-                    print(f"Bot: {last_msg['content']}")
-
-                if state.get("quit"):
-                    break
+            if user_input.lower() == "quit":
+                break
 
         except EOFError:
             break
