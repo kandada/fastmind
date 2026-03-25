@@ -80,18 +80,18 @@ async def chat_agent(state: dict, event: Event) -> dict:
             )
             return
 
-        from openai import OpenAI
+        from openai import AsyncOpenAI
 
-        client = OpenAI(api_key=api_key, base_url=api_url)
+        client = AsyncOpenAI(api_key=api_key, base_url=api_url)
 
         try:
-            stream = client.chat.completions.create(
+            stream = await client.chat.completions.create(
                 model=model,
                 messages=state["messages"],
                 stream=True,
             )
 
-            for chunk in stream:
+            async for chunk in stream:
                 delta = chunk.choices[0].delta.content or ""
                 if delta:
                     for char in delta:

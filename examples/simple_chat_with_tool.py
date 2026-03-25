@@ -86,11 +86,11 @@ async def chat_agent(state: dict, event: Event) -> dict:
         return state
 
     try:
-        from openai import OpenAI
+        from openai import AsyncOpenAI
 
-        client = OpenAI(api_key=api_key, base_url=api_url)
+        client = AsyncOpenAI(api_key=api_key, base_url=api_url)
 
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=model,
             messages=state["messages"],
             tools=app.get_tool_schemas(),
@@ -145,9 +145,9 @@ async def chat_agent(state: dict, event: Event) -> dict:
         return state
 
     try:
-        from openai import OpenAI
+        from openai import AsyncOpenAI
 
-        client = OpenAI(api_key=api_key, base_url=api_url)
+        client = AsyncOpenAI(api_key=api_key, base_url=api_url)
 
         # 清理之前连续的系统工具结果消息，避免 LLM 继续调用无关工具
         messages = state["messages"]
@@ -162,7 +162,7 @@ async def chat_agent(state: dict, event: Event) -> dict:
                 break
         state["messages"] = messages
 
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=model,
             messages=state["messages"],
             tools=app.get_tool_schemas(),

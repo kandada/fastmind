@@ -42,11 +42,11 @@ async def chat_agent(state: dict, event: Event) -> dict:
         return state
 
     try:
-        from openai import OpenAI
+        from openai import AsyncOpenAI
 
-        client = OpenAI(api_key=api_key, base_url=api_url)
+        client = AsyncOpenAI(api_key=api_key, base_url=api_url)
 
-        response = client.chat.completions.create(
+        response = await client.chat.completions.create(
             model=model,
             messages=state["messages"],
         )
