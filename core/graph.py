@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Callable, Any, Optional, Union, TYPE_CHECKING
 from collections import defaultdict
-import asyncio
 
 if TYPE_CHECKING:
     from .event import Event
@@ -233,6 +232,10 @@ class Graph:
     def get_node(self, name: str) -> Optional[Union[NodeFunc, "Graph"]]:
         """获取节点"""
         return self.nodes.get(name)
+
+    def _has_conditional_edges(self, node_name: str) -> bool:
+        """检查节点是否有条件边"""
+        return node_name in self.conditional_edges
 
     def has_node(self, name: str) -> bool:
         """检查节点是否存在"""

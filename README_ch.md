@@ -300,6 +300,17 @@ pip install fastmind[dev]
 pytest tests/ -v
 ```
 
+## 更新日志
+
+### v0.1.3
+- **Bug 修复**: 修复了 agent 返回无输出事件时 `stream_events` 超时的问题
+- **改进**: 增强引擎调试日志，提升可观测性
+- **改进**: Graph 类新增 `_has_conditional_edges()` 辅助方法
+- **测试**: 新增 ReAct 循环和节点执行保护的综合测试套件
+
+### v0.1.2
+- 初始版本
+
 ## 许可证
 
 GPL-3.0 许可证 - 详见 [LICENSE](LICENSE)。

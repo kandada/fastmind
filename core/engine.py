@@ -229,6 +229,12 @@ class Session:
                 logger.warning(f"Session {self.session_id}: node '{current_node}' not found")
                 break
 
+            logger.debug(
+                f"Session {self.session_id}: executing node '{current_node}' "
+                f"(iteration={iteration_count}, tool_calls={self.state.get('tool_calls')}, "
+                f"tool_results={self.state.get('tool_results')})"
+            )
+
             try:
                 if isinstance(node, Graph):
                     await self._execute_subgraph(node, event)
@@ -244,7 +250,14 @@ class Session:
                             return
                         await self._put_output(output_event)
 
+                logger.debug(
+                    f"Session {self.session_id}: node '{current_node}' completed, "
+                    f"tool_calls={self.state.get('tool_calls')}, tool_results={self.state.get('tool_results')}"
+                )
+
                 current_node = self.graph.get_next_node(current_node, self.state, event)
+
+                logger.debug(f"Session {self.session_id}: next node is '{current_node}'")
             except Exception as e:
                 logger.error(f"Session {self.session_id}: error in node {current_node}: {e}")
                 await self._put_output(

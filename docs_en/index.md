@@ -10,6 +10,12 @@ A lightweight multi-agent framework for embodied AI systems.
 - **Human-in-the-loop**: Supports human confirmation and interruption
 - **Developer-Friendly**: FastAPI-like decorator pattern
 
+## Recent Updates (v0.1.3)
+
+- **Bug Fix**: Fixed `stream_events` timeout issue when agent returns no output events
+- **Improvement**: Enhanced debug logging for better observability
+- **Tests**: 152 tests passing including LLM integration tests with DeepSeek and Moonshot
+
 ## Quick Start
 
 ```python

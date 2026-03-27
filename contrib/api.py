@@ -142,7 +142,9 @@ class FastMindAPI:
 
         while self._running and session.is_alive:
             try:
-                event = await asyncio.wait_for(session.output_queue.get(), timeout=1.0)
+                event = await session.wait_for_output(timeout=1.0)
+                if event is None:
+                    continue
                 if event_types is None or event.type in event_types:
                     yield event
                 if event.type in ("stream.end", "error", "interrupt"):

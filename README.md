@@ -300,6 +300,17 @@ pip install fastmind[dev]
 pytest tests/ -v
 ```
 
+## Changelog
+
+### v0.1.3
+- **Bug Fix**: Fixed `stream_events` timeout issue when agent returns no output events
+- **Improvement**: Enhanced debug logging in engine for better observability
+- **Improvement**: Added `_has_conditional_edges()` helper method to Graph class
+- **Tests**: Added comprehensive test suite for ReAct loops and node execution protection
+
+### v0.1.2
+- Initial release
+
 ## License
 
 GPL-3.0 License - see [LICENSE](LICENSE) for details.
