@@ -321,7 +321,7 @@ GPL-3.0 许可证 - 详见 [LICENSE](LICENSE)。
 
 ## 作者
 
-[xiefujin](https://github.com/kandada)
+[xiefujin](https://github.com/kandada)  email:490021684@qq.com
 
 ## 链接
 

@@ -321,7 +321,7 @@ Inspired by [LangGraph](https://github.com/langchain-ai/langgraph) for the state
 
 ## Author
 
-[xiefujin](https://github.com/kandada)
+[xiefujin](https://github.com/kandada)  email:490021684@qq.com
 
 ## Links
 
