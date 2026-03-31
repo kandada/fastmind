@@ -15,6 +15,56 @@ from ..utils.logging import get_logger
 logger = get_logger("fastmind.engine")
 
 
+class NotifyingQueue:
+    """包装 asyncio.Queue，在 put 时自动触发 asyncio.Event"""
+
+    def __init__(self, queue: asyncio.Queue, event: asyncio.Event):
+        self._queue = queue
+        self._event = event
+
+    async def put(self, item):
+        await self._queue.put(item)
+        self._event.set()
+
+    def put_nowait(self, item):
+        self._queue.put_nowait(item)
+        self._event.set()
+
+    async def get(self):
+        item = await self._queue.get()
+        if not self._queue.empty():
+            self._event.set()
+        return item
+
+    def get_nowait(self):
+        item = self._queue.get_nowait()
+        if not self._queue.empty():
+            self._event.set()
+        return item
+
+    def empty(self):
+        return self._queue.empty()
+
+    def qsize(self):
+        return self._queue.qsize()
+
+    def full(self):
+        return self._queue.full()
+
+    def task_done(self):
+        return self._queue.task_done()
+
+    async def join(self):
+        await self._queue.join()
+
+    @property
+    def _unfinished_tasks(self):
+        return self._queue.unfinished_tasks
+
+    def __aiter__(self):
+        return self._queue.__aiter__()
+
+
 class Session:
     """会话实例
 
@@ -52,8 +102,8 @@ class Session:
         self.app = app
         self.state: dict = State()
         self.input_queue: asyncio.Queue[Event] = asyncio.Queue()
-        self.output_queue: asyncio.Queue[Event] = asyncio.Queue()
         self._output_event: asyncio.Event = asyncio.Event()
+        self.output_queue = NotifyingQueue(asyncio.Queue(), self._output_event)
         self._task: Optional[asyncio.Task] = None
         self._state = self.STATE_CREATED
         self._checkpoint: Optional[dict] = None
@@ -110,14 +160,11 @@ class Session:
     async def _put_output(self, event: Event) -> None:
         """内部方法：推送输出事件并触发信号"""
         await self.output_queue.put(event)
-        self._output_event.set()
 
     async def get_output(self) -> Optional[Event]:
         """获取输出事件（非阻塞）"""
         try:
-            event = self.output_queue.get_nowait()
-            self._output_event.set() if not self.output_queue.empty() else None
-            return event
+            return self.output_queue.get_nowait()
         except asyncio.QueueEmpty:
             return None
 

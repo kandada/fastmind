@@ -23,7 +23,10 @@ class TestSession:
         assert session.app == app
         assert isinstance(session.state, dict)
         assert isinstance(session.input_queue, asyncio.Queue)
-        assert isinstance(session.output_queue, asyncio.Queue)
+        assert hasattr(session.output_queue, "put")
+        assert hasattr(session.output_queue, "get")
+        assert hasattr(session.output_queue, "put_nowait")
+        assert hasattr(session.output_queue, "get_nowait")
 
     @pytest.mark.asyncio
     async def test_session_state_contains_queues(self):

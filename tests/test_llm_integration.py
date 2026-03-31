@@ -24,7 +24,7 @@ class TestLLMIntegration:
     def llm_config(self):
         """LLM 配置"""
         return {
-            "api_key": os.getenv("LLM_API_KEY", "sk-a64dc1190d3649fcbf53b3bd29219711"),
+            "api_key": os.getenv("LLM_API_KEY"),
             "api_url": os.getenv("LLM_API_URL", "https://api.deepseek.com/v1"),
             "model": os.getenv("LLM_MODEL_NAME", "deepseek-chat"),
         }
@@ -40,9 +40,9 @@ class TestLLMIntegration:
             return weathers.get(city, f"{city}: 天气未知")
 
         return app, {
-            "api_key": "sk-a64dc1190d3649fcbf53b3bd29219711",
-            "api_url": "https://api.deepseek.com/v1",
-            "model": "deepseek-chat",
+            "api_key": os.getenv("LLM_API_KEY"),
+            "api_url": os.getenv("LLM_API_URL", "https://api.deepseek.com/v1"),
+            "model": os.getenv("LLM_MODEL_NAME", "deepseek-chat"),
         }
 
     @pytest.mark.asyncio
@@ -280,9 +280,9 @@ class TestMoonshotLLM:
     def moonshot_config(self):
         """Moonshot 配置"""
         return {
-            "api_key": "sk-f2x8aZ4INh3NlCYLeMIYqgBa7e6uE6ICmt2Ihys2C4wbtr4F",
-            "api_url": "https://api.moonshot.cn/v1",
-            "model": "kimi-k2.5",
+            "api_key": os.getenv("MOONSHOT_API_KEY"),
+            "api_url": os.getenv("MOONSHOT_API_URL", "https://api.moonshot.cn/v1"),
+            "model": os.getenv("MOONSHOT_MODEL_NAME", "kimi-k2.5"),
         }
 
     @pytest.mark.asyncio
