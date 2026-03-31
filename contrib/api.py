@@ -72,13 +72,21 @@ class FastMindAPI:
         await self._engine.stop()
 
     async def _handle_perception_event(self, event: Event) -> None:
-        """处理感知事件"""
-        if event.type == "sensor.data":
-            session_id = event.session_id or "system"
-            if session_id != "system":
-                session = self._engine.get_session(session_id)
-                if session:
-                    await session.push_event(event)
+        """处理感知事件
+
+        将感知事件路由到对应的会话。
+        - system session 的事件不会被路由
+        - 所有类型的感知事件都会被路由（sensor.data, timer, user.message 等）
+        - 如果会话不存在，会自动创建
+        """
+        session_id = event.session_id or "system"
+        if session_id == "system":
+            return
+
+        session = self._engine.get_or_create_session(session_id)
+        if not session.is_running:
+            await session.start()
+        await session.push_event(event)
 
     async def push_event(
         self,

@@ -302,6 +302,12 @@ pytest tests/ -v
 
 ## Changelog
 
+### v0.1.9
+- **Bug Fix**: Fixed sync generator state preservation in PerceptionLoop (sync generators now maintain state across loops instead of restarting)
+- **Bug Fix**: Fixed silent exception swallowing in perception handlers (exceptions are now properly logged)
+- **Bug Fix**: Fixed hardcoded `sensor.data` event type filtering (all event types are now routed correctly)
+- **Improvement**: Perception events auto-create sessions if they don't exist
+
 ### v0.1.3
 - **Bug Fix**: Fixed `stream_events` timeout issue when agent returns no output events
 - **Improvement**: Enhanced debug logging in engine for better observability

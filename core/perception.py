@@ -1,17 +1,28 @@
 """感知循环调度器"""
 
-from typing import Callable, Any, Optional
+from typing import Callable, Any, Optional, AsyncIterator, Iterator
 import asyncio
 from collections import defaultdict
 
 from .event import Event
 from .app import FastMind
+from ..utils.logging import get_logger
+
+logger = get_logger("fastmind.perception")
 
 
 class PerceptionLoop:
     """感知循环
 
     定期生成事件，用于传感器数据、定时器等外部驱动。
+
+    感知函数类型:
+        - async generator: async def func(app) -> AsyncIterator[Event]
+        - async function returning iterator: async def func(app) -> Iterator[Event]
+        - sync generator: def func(app) -> Iterator[Event]
+        - sync function returning iterator: def func(app) -> Iterator[Event]
+
+    同步生成器会被复用，避免每次循环都重新初始化导致状态丢失。
     """
 
     def __init__(
@@ -27,6 +38,8 @@ class PerceptionLoop:
         self.app = app
         self._task: Optional[asyncio.Task] = None
         self._running = False
+        self._sync_generator: Optional[Iterator] = None
+        self._generator_exhausted = False
 
     async def start(self, event_handler: Callable) -> None:
         """启动感知循环
@@ -46,35 +59,80 @@ class PerceptionLoop:
                 await self._task
             except asyncio.CancelledError:
                 pass
+        self._sync_generator = None
+        self._generator_exhausted = False
+
+    def _is_async_generator(self, obj: Any) -> bool:
+        """检查对象是否是异步生成器"""
+        return hasattr(obj, "__anext__") and hasattr(obj, "__aiter__")
+
+    def _is_sync_generator_function(self, func: Callable) -> bool:
+        """检查函数是否是同步生成器函数"""
+        import inspect
+
+        return inspect.isgeneratorfunction(func)
 
     async def _run(self, event_handler: Callable) -> None:
-        """感知循环主函数"""
+        """感知循环主函数
+
+        关键设计:
+        - 异步生成器: 每次循环调用一次
+        - 同步生成器函数: 只初始化一次，后续复用（保持状态）
+        - 同步函数返回迭代器: 每次循环调用一次
+        """
         while self._running:
             try:
-                gen = self.func(self.app)
+                if self._sync_generator is not None and not self._generator_exhausted:
+                    events = self._sync_generator
+                    await self._iterate_sync_events(events, event_handler)
+                elif self._sync_generator is None:
+                    gen = self.func(self.app)
 
-                if asyncio.iscoroutine(gen):
-                    events = await gen
-                else:
-                    events = gen
-
-                if hasattr(events, "__anext__"):
-                    async for event in events:
-                        if not self._running:
-                            break
-                        await event_handler(event)
-                else:
-                    for event in events:
-                        if not self._running:
-                            break
-                        await event_handler(event)
+                    if asyncio.iscoroutine(gen):
+                        events = await gen
+                        if self._is_async_generator(events):
+                            await self._iterate_async_events(events, event_handler)
+                        else:
+                            await self._iterate_sync_events(events, event_handler)
+                    elif self._is_async_generator(gen):
+                        await self._iterate_async_events(gen, event_handler)
+                    else:
+                        if self._is_sync_generator_function(self.func):
+                            self._sync_generator = gen
+                            await self._iterate_sync_events(gen, event_handler)
+                        else:
+                            await self._iterate_sync_events(gen, event_handler)
 
                 await asyncio.sleep(self.interval)
 
             except asyncio.CancelledError:
                 break
             except Exception as e:
+                logger.error(f"PerceptionLoop '{self.name}' error: {e}")
                 await asyncio.sleep(self.interval)
+
+    async def _iterate_async_events(self, events: AsyncIterator, event_handler: Callable) -> None:
+        """迭代异步事件"""
+        try:
+            async for event in events:
+                if not self._running:
+                    break
+                await event_handler(event)
+        except StopAsyncIteration:
+            pass
+
+    async def _iterate_sync_events(self, events: Iterator, event_handler: Callable) -> None:
+        """迭代同步事件"""
+        try:
+            while self._running:
+                try:
+                    event = next(events)
+                    await event_handler(event)
+                except StopIteration:
+                    self._generator_exhausted = True
+                    break
+        except Exception as e:
+            logger.error(f"Error iterating sync events in '{self.name}': {e}")
 
 
 class PerceptionScheduler:
@@ -133,15 +191,20 @@ class PerceptionScheduler:
         self._loops.clear()
 
     async def _handle_event(self, event: Event) -> None:
-        """处理感知事件"""
+        """处理感知事件
+
+        事件会被传递给所有已注册的处理器。
+        异常会被记录但不会中断其他处理器的执行。
+        """
         for handler in self._event_handlers:
             try:
                 if asyncio.iscoroutinefunction(handler):
                     await handler(event)
                 else:
                     handler(event)
-            except Exception:
-                pass
+            except Exception as e:
+                handler_name = getattr(handler, "__name__", repr(handler))
+                logger.error(f"Error in perception event handler '{handler_name}': {e}")
 
     def get_loop(self, name: str) -> Optional[PerceptionLoop]:
         """获取感知循环"""
@@ -198,8 +261,8 @@ class Timer:
 
             except asyncio.CancelledError:
                 break
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"Timer callback error: {e}")
 
 
 class SensorManager:
@@ -276,14 +339,21 @@ class SensorManager:
                 )
 
                 for handler in self._event_handlers:
-                    if asyncio.iscoroutinefunction(handler):
-                        await handler(event)
-                    else:
-                        handler(event)
+                    try:
+                        if asyncio.iscoroutinefunction(handler):
+                            await handler(event)
+                        else:
+                            handler(event)
+                    except Exception as e:
+                        handler_name = getattr(handler, "__name__", repr(handler))
+                        logger.error(
+                            f"Error in sensor handler '{handler_name}' for sensor '{name}': {e}"
+                        )
 
                 await asyncio.sleep(interval)
 
             except asyncio.CancelledError:
                 break
-            except Exception:
+            except Exception as e:
+                logger.error(f"Sensor '{name}' error: {e}")
                 await asyncio.sleep(interval)
