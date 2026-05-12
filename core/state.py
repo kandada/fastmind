@@ -130,7 +130,7 @@ class State(dict):
         message = {"role": role, "content": content, **extra_fields}
 
         last = self[key][-1] if self[key] else None
-        if last and last.get("role") == role and last.get("content") == content:
+        if last and all(last.get(k) == v for k, v in message.items()):
             return False
 
         self[key].append(message)

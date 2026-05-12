@@ -170,6 +170,9 @@ class Graph:
             "resume_node": resume_node,
             "cancel_node": cancel_node,
         }
+        self.add_edge(name, resume_node)
+        if cancel_node:
+            self.add_edge(name, cancel_node)
         return self
 
     def set_entry_point(self, name: str) -> "Graph":
@@ -211,21 +214,21 @@ class Graph:
             for edge in fallback_edges:
                 condition = edge.get("condition")
                 if condition is None or condition(state):
-                    target = edge["target"]
-                    if target == self.END_NODE:
+                    target = edge.get("target")
+                    if target and target == self.END_NODE:
                         return None
-                    return target
-
-            return None
+                    if target:
+                        return target
 
         edges = self.edges.get(current_node, [])
         for edge in edges:
             condition = edge.get("condition")
             if condition is None or condition(state):
-                target = edge["target"]
-                if target == self.END_NODE:
+                target = edge.get("target")
+                if target and target == self.END_NODE:
                     return None
-                return target
+                if target:
+                    return target
 
         return None
 
@@ -286,6 +289,11 @@ class Graph:
                 target = edge.get("target")
                 if target and target != self.END_NODE:
                     dfs(target)
+
+            if node in self.conditional_edges:
+                for target in self.conditional_edges[node]["path_map"].values():
+                    if target != self.END_NODE:
+                        dfs(target)
 
             path.pop()
             return False

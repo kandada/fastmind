@@ -5,6 +5,7 @@ import asyncio
 from fastmind import FastMind
 from fastmind.core.graph import Graph
 from fastmind.core.event import Event
+from fastmind.core.engine import Session
 from fastmind.contrib import FastMindAPI
 
 
@@ -522,5 +523,141 @@ class TestFastMindAPIEdgeCases:
 
         with pytest.raises(RuntimeError, match="is not interrupted"):
             await api.resume_session("s1", "input")
+
+        await api.stop()
+
+
+class TestHITLIntegration:
+    """Human-in-the-loop 端到端集成测试"""
+
+    @pytest.mark.asyncio
+    async def test_interrupt_and_resume_confirm(self):
+        """完整流程：事件 → 中断 → resume confirm → 验证继续执行"""
+        app = FastMind()
+
+        async def process_node(state, event):
+            state["step"] = "before_interrupt"
+            return state
+
+        async def interrupt_node(state, event):
+            return state, [Event(
+                type="interrupt",
+                payload={"prompt": "ok?", "resume_node": "after"},
+                session_id=event.session_id,
+            )]
+
+        async def after_node(state, event):
+            state["step"] = "after_resume"
+            return state
+
+        graph = Graph()
+        graph.add_node("process", process_node)
+        graph.add_node("ask", interrupt_node)
+        graph.add_node("after", after_node)
+        graph.add_edge("process", "ask")
+        graph.set_entry_point("process")
+        app.register_graph("main", graph)
+
+        api = FastMindAPI(app)
+        await api.start()
+
+        await api.push_event("u1", Event("test", {}, "u1"))
+        await asyncio.sleep(0.2)
+
+        state = api.get_state("u1")
+        assert state["step"] == "before_interrupt"
+
+        session = api.get_session("u1")
+        assert session.session_state == Session.STATE_INTERRUPTED
+
+        await api.resume_session("u1", "confirm")
+        await asyncio.sleep(0.2)
+
+        state = api.get_state("u1")
+        assert state["step"] == "after_resume"
+
+        await api.stop()
+
+    @pytest.mark.asyncio
+    async def test_interrupt_and_resume_cancel(self):
+        """resume 时选 cancel → 路由到 cancel_node"""
+        app = FastMind()
+
+        async def interrupt_node(state, event):
+            return state, [Event(
+                type="interrupt",
+                payload={"prompt": "ok?", "resume_node": "after", "cancel_node": "end"},
+                session_id=event.session_id,
+            )]
+
+        async def after_node(state, event):
+            state["result"] = "confirmed"
+            return state
+
+        async def end_node(state, event):
+            state["result"] = "cancelled"
+            return state
+
+        graph = Graph()
+        graph.add_node("ask", interrupt_node)
+        graph.add_node("after", after_node)
+        graph.add_node("end", end_node)
+        graph.set_entry_point("ask")
+        app.register_graph("main", graph)
+
+        api = FastMindAPI(app)
+        await api.start()
+
+        await api.push_event("u1", Event("test", {}, "u1"))
+        await asyncio.sleep(0.2)
+
+        session = api.get_session("u1")
+        assert session.session_state == Session.STATE_INTERRUPTED
+
+        await api.resume_session("u1", "cancel")
+        await asyncio.sleep(0.2)
+
+        state = api.get_state("u1")
+        assert state["result"] == "cancelled"
+
+        await api.stop()
+
+    @pytest.mark.asyncio
+    async def test_interrupt_no_resume_node(self):
+        """interrupt 没有 resume_node 时，从原节点 get_next_node 继续"""
+        app = FastMind()
+
+        async def interrupt_node(state, event):
+            return state, [Event(
+                type="interrupt",
+                payload={"prompt": "ok?"},
+                session_id=event.session_id,
+            )]
+
+        async def next_node(state, event):
+            state["resumed"] = True
+            return state
+
+        graph = Graph()
+        graph.add_node("ask", interrupt_node)
+        graph.add_node("next", next_node)
+        graph.add_edge("ask", "next")
+        graph.set_entry_point("ask")
+        app.register_graph("main", graph)
+
+        api = FastMindAPI(app)
+        await api.start()
+
+        await api.push_event("u1", Event("test", {}, "u1"))
+        await asyncio.sleep(0.2)
+
+        session = api.get_session("u1")
+        assert session.session_state == Session.STATE_INTERRUPTED
+
+        await api.resume_session("u1", "confirm")
+        await asyncio.sleep(0.2)
+
+        state = api.get_state("u1")
+        assert state.get("resumed") is True
 
         await api.stop()

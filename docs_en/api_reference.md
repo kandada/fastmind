@@ -25,7 +25,7 @@ async def get_weather(city: str) -> str:
 Decorator: Register an Agent
 
 ```python
-@app.agent(name="chat", tools=["get_weather"], stream=False)
+@app.agent(name="chat")
 async def chat(state, event):
     return state
 ```
@@ -42,12 +42,22 @@ async def sensor(app):
         await asyncio.sleep(5.0)
 ```
 
-### app.get_tool_schemas()
+### app.get_tool_schemas(tools=None)
 
-Get OpenAI schemas for all tools
+Get OpenAI schemas for tools, optionally filtered by tool names.
 
 ```python
-schemas = app.get_tool_schemas()
+schemas = app.get_tool_schemas()                         # Get all tool schemas
+schemas = app.get_tool_schemas(tools=["get_weather"])    # Get only specified schemas
+```
+
+### app.get_tools(tools=None)
+
+Get tool dictionary, optionally filtered by tool names.
+
+```python
+tools = app.get_tools()                         # Get all tools
+tools = app.get_tools(tools=["get_weather"])    # Get only specified tools
 ```
 
 ## Graph

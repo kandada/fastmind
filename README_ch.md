@@ -121,7 +121,7 @@ event = Event(type="user.message", payload={"text": "你好"}, session_id="user_
 零轮询的实时流式输出：
 
 ```python
-@app.agent(name="chat_agent", stream=True)
+@app.agent(name="chat_agent")
 async def chat_agent(state: dict, event: Event) -> dict:
     output_queue = state["_output_queue"]
     session_id = state["_session_id"]
@@ -224,7 +224,8 @@ async def get_weather(city: str) -> str:
 
 from fastmind import ToolNode
 
-tool_node = ToolNode(app.get_tools())
+tool_node = ToolNode(app.get_tools())                      # 所有工具
+# tool_node = ToolNode(app.get_tools(tools=["get_weather"])) # 按需过滤
 
 def has_tool_calls(state: dict, event: Event) -> str:
     return "tools" if state.get("tool_calls") else None
@@ -301,6 +302,26 @@ pytest tests/ -v
 ```
 
 ## 更新日志
+
+### v0.1.10
+- **新功能**: `app.get_tools(tools=None)` 和 `app.get_tool_schemas(tools=None)` 支持按工具名称过滤
+- **Bug 修复**: 修复感知循环中同步生成器耗尽后永久空闲问题（耗尽后自动重新创建）
+- **Bug 修复**: 修复 HITL 中断恢复后重新执行中断节点的问题（现在正确路由到 resume_node/cancel_node）
+- **Bug 修复**: 修复子图中 interrupt 事件未被识别的问题（子图中断现在正确中断会话）
+- **Bug 修复**: 修复 `detect_cycles()` 不遍历条件边的问题（条件边形成的环现在可被检测）
+- **Bug 修复**: 修复 `get_next_node()` 条件边无匹配时不回退到普通边的问题
+- **Bug 修复**: 修复 `_merge_state` 丢失 State 类型方法的问题
+- **Bug 修复**: 修复 `engine.stop()` 中死代码 task 清理循环
+- **Bug 修复**: 修复感知事件 handler 异常导致整个迭代停止的问题
+- **Bug 修复**: 修复 `add_message_if_new` 不比较额外字段的问题
+- **Bug 修复**: 将 `import json` 从 ToolNode 循环内移到模块顶部
+- **改进**: 新增 `ToolRegistry.add()` / `AgentRegistry.add()` 公有方法
+- **改进**: `register_tool()` / `register_agent()` 改用公有 API 而非直接访问私有字典
+- **改进**: 对感知处理器丢弃的 system session 事件添加 debug 日志
+- **改进**: `_execute_subgraph` 增加了 max_iterations 保护
+- **改进**: 节点不存在时现在发出 error 事件而非静默失败
+- **改进**: 感知事件处理器现在先注册再启动调度器（修复竞态条件）
+- **改进**: `Graph.add_interrupt()` 现在自动创建到 resume_node/cancel_node 的边
 
 ### v0.1.9
 - **Bug 修复**: 修复同步生成器状态丢失问题（同步生成器现在保持状态，不会每次循环重新初始化）

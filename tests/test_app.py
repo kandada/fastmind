@@ -56,13 +56,44 @@ class TestFastMind:
         assert app.get_graph("test_graph") == graph
 
     def test_get_tool_schemas(self, app):
-        """测试获取工具 schema"""
+        """测试获取工具 schema（全量）"""
 
         @app.tool(name="weather", description="获取天气")
         async def get_weather(city: str) -> str:
             return "sunny"
 
         schemas = app.get_tool_schemas()
+        assert len(schemas) == 1
+        assert schemas[0]["function"]["name"] == "weather"
+
+    def test_get_tools_filtered(self, app):
+        """测试过滤获取工具"""
+
+        @app.tool(name="tool_a")
+        async def tool_a():
+            pass
+
+        @app.tool(name="tool_b")
+        async def tool_b():
+            pass
+
+        tools = app.get_tools(tools=["tool_a"])
+        assert len(tools) == 1
+        assert "tool_a" in tools
+        assert "tool_b" not in tools
+
+    def test_get_tool_schemas_filtered(self, app):
+        """测试过滤获取工具 schema"""
+
+        @app.tool(name="weather", description="获取天气")
+        async def get_weather(city: str) -> str:
+            return "sunny"
+
+        @app.tool(name="calculate")
+        async def calculate(expr: str) -> str:
+            return str(eval(expr))
+
+        schemas = app.get_tool_schemas(tools=["weather"])
         assert len(schemas) == 1
         assert schemas[0]["function"]["name"] == "weather"
 

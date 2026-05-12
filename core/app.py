@@ -134,7 +134,7 @@ class FastMind:
             name: 工具名称
             tool: Tool 实例
         """
-        self._tool_registry._tools[name] = tool
+        self._tool_registry.add(name, tool)
 
     def register_agent(self, name: str, agent: Agent) -> None:
         """手动注册 Agent
@@ -143,7 +143,7 @@ class FastMind:
             name: Agent 名称
             agent: Agent 实例
         """
-        self._agent_registry._agents[name] = agent
+        self._agent_registry.add(name, agent)
 
     def perception(
         self,
@@ -187,17 +187,43 @@ class FastMind:
         """获取所有图"""
         return self._graphs.copy()
 
-    def get_tools(self) -> dict[str, Tool]:
-        """获取所有工具"""
-        return self._tool_registry.get_all()
+    def get_tools(self, tools: Optional[list[str]] = None) -> dict[str, Tool]:
+        """获取工具
+
+        Args:
+            tools: 工具名称列表，只返回这些工具。None 表示返回全部工具。
+
+        Returns:
+            工具字典 {name: Tool}
+        """
+        if tools is None:
+            return self._tool_registry.get_all()
+        return {
+            name: self._tool_registry.get(name)
+            for name in tools
+            if name in self._tool_registry
+        }
 
     def get_tool(self, name: str) -> Optional[Tool]:
         """获取工具"""
         return self._tool_registry.get(name)
 
-    def get_tool_schemas(self) -> list[dict]:
-        """获取所有工具的 schema（用于 LLM 调用）"""
-        return self._tool_registry.get_schemas()
+    def get_tool_schemas(self, tools: Optional[list[str]] = None) -> list[dict]:
+        """获取工具的 OpenAI schema（用于 LLM 调用）
+
+        Args:
+            tools: 工具名称列表，只返回这些工具的 schema。None 表示返回全部。
+
+        Returns:
+            schema 列表
+        """
+        if tools is None:
+            return self._tool_registry.get_schemas()
+        return [
+            self._tool_registry.get(name).to_openai_schema()
+            for name in tools
+            if name in self._tool_registry
+        ]
 
     def get_agents(self) -> dict[str, Agent]:
         """获取所有 Agent"""
@@ -215,7 +241,7 @@ class FastMind:
         return (
             f"FastMind("
             f"graphs={list(self._graphs.keys())}, "
-            f"tools={list(self._tool_registry._tools.keys())}, "
-            f"agents={list(self._agent_registry._agents.keys())}"
+            f"tools={list(self._tool_registry.get_all().keys())}, "
+            f"agents={list(self._agent_registry.get_all().keys())}"
             f")"
         )

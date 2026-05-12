@@ -1,10 +1,11 @@
 """工具注册与执行"""
 
-from typing import Callable, Any, Optional
+from typing import Callable, Any, Optional, Union
 from dataclasses import dataclass, field
 from collections.abc import AsyncGenerator
 import asyncio
 import inspect
+import json
 
 from .event import Event
 
@@ -118,6 +119,10 @@ class ToolRegistry:
         """获取所有工具的 schema"""
         return [tool.to_openai_schema() for tool in self._tools.values()]
 
+    def add(self, name: str, tool: Tool) -> None:
+        """直接添加工具实例"""
+        self._tools[name] = tool
+
     def __contains__(self, name: str) -> bool:
         return name in self._tools
 
@@ -128,7 +133,7 @@ class ToolNode:
     用于执行 agent 产生的 tool_calls，并将结果写入 state。
     """
 
-    def __init__(self, tools: dict[str, Tool]):
+    def __init__(self, tools: Union[dict[str, Tool], ToolRegistry]):
         """初始化 ToolNode
 
         Args:
@@ -161,8 +166,6 @@ class ToolNode:
             arguments = tool_call.get("function", {}).get("arguments", "{}")
 
             if isinstance(arguments, str):
-                import json
-
                 try:
                     arguments = json.loads(arguments)
                 except json.JSONDecodeError:
@@ -212,8 +215,6 @@ class StreamingToolNode(ToolNode):
             arguments = tool_call.get("function", {}).get("arguments", "{}")
 
             if isinstance(arguments, str):
-                import json
-
                 try:
                     arguments = json.loads(arguments)
                 except json.JSONDecodeError:

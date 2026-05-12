@@ -25,7 +25,7 @@ async def get_weather(city: str) -> str:
 装饰器：注册 Agent
 
 ```python
-@app.agent(name="chat", tools=["get_weather"], stream=False)
+@app.agent(name="chat")
 async def chat(state, event):
     return state
 ```
@@ -42,12 +42,22 @@ async def sensor(app):
         await asyncio.sleep(5.0)
 ```
 
-### app.get_tool_schemas()
+### app.get_tool_schemas(tools=None)
 
-获取所有工具的 OpenAI schema
+获取工具的 OpenAI schema，可指定工具名称过滤。
 
 ```python
-schemas = app.get_tool_schemas()
+schemas = app.get_tool_schemas()                         # 获取所有工具 schema
+schemas = app.get_tool_schemas(tools=["get_weather"])    # 只获取指定工具 schema
+```
+
+### app.get_tools(tools=None)
+
+获取工具字典，可指定工具名称过滤。
+
+```python
+tools = app.get_tools()                         # 获取所有工具
+tools = app.get_tools(tools=["get_weather"])    # 只获取指定工具
 ```
 
 ## Graph

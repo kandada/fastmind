@@ -60,9 +60,8 @@ class FastMindAPI:
         logger.info("Starting FastMindAPI")
         self._running = True
         await self._engine.start()
-        await self._perception_scheduler.start()
-
         self._perception_scheduler.register_event_handler(self._handle_perception_event)
+        await self._perception_scheduler.start()
 
     async def stop(self) -> None:
         """停止引擎和感知循环"""
@@ -81,6 +80,9 @@ class FastMindAPI:
         """
         session_id = event.session_id or "system"
         if session_id == "system":
+            logger.debug(
+                f"Perception event type='{event.type}' ignored (session_id='system')"
+            )
             return
 
         session = self._engine.get_or_create_session(session_id)
@@ -227,13 +229,16 @@ class FastMindAPI:
         """
         await self._engine.delete_session(session_id)
 
-    def get_tool_schemas(self) -> list[dict]:
-        """获取所有工具的 schema
+    def get_tool_schemas(self, tools: Optional[list[str]] = None) -> list[dict]:
+        """获取工具的 schema
+
+        Args:
+            tools: 工具名称列表，只返回这些工具的 schema。None 表示返回全部。
 
         Returns:
             工具 schema 列表
         """
-        return self.app.get_tool_schemas()
+        return self.app.get_tool_schemas(tools=tools)
 
     def get_graph(self, name: str = "main"):
         """获取图

@@ -8,51 +8,83 @@ from fastmind.core.event import Event, EventType
 from fastmind.core.graph import Graph
 
 
-class TestBug1_SyncGeneratorRepeatExecution:
-    """Bug 1: 同步生成器会被重复执行，每次循环都从头开始"""
+class TestSyncGeneratorExhaustion:
+    """验证同步生成器耗尽后会被重新创建"""
 
     @pytest.mark.asyncio
-    async def test_sync_generator_restarts_every_loop(self):
-        """同步生成器每次循环都重新执行，应该被修复为保持状态"""
+    async def test_sync_generator_recreated_after_exhaustion(self):
+        """有限同步生成器耗尽后，下次循环重新创建而非永久闲置"""
         app = FastMind()
         scheduler = PerceptionScheduler(app)
 
         call_count = 0
-        yield_count = 0
 
-        def sync_perception(app):
-            nonlocal call_count, yield_count
+        def finite_sensor(app):
+            nonlocal call_count
             call_count += 1
-            for i in range(3):
-                yield_count += 1
+            for i in range(2):
                 yield Event(
                     type="sensor.data",
-                    payload={"call": call_count, "yield_num": i},
-                    session_id="system",
+                    payload={"call": call_count, "i": i},
+                    session_id="test",
                 )
 
-        scheduler.register_loop("sync_sensor", sync_perception, 0.05)
+        scheduler.register_loop("finite", finite_sensor, 0.03)
 
-        events_received = []
+        events = []
 
         async def handler(event):
-            events_received.append(event)
+            events.append(event)
 
         scheduler.register_event_handler(handler)
 
         await scheduler.start()
-        await asyncio.sleep(0.18)  # 等待大约 3-4 个循环
+        await asyncio.sleep(0.15)
         await scheduler.stop()
 
-        print(f"\n=== Bug 1 复现结果 ===")
-        print(f"感知函数被调用次数 (call_count): {call_count}")
-        print(f"yield 总次数 (yield_count): {yield_count}")
-        print(f"接收到的事件数: {len(events_received)}")
-        print(f"期望的 yield 次数: 3 (生成器应保持状态)")
-        print(f"实际情况: 生成器被重新创建 {call_count} 次")
+        assert call_count >= 2, f"耗尽后应重新创建，实际调用 {call_count} 次"
+        assert len(events) >= 4, f"应收到至少 4 个事件，实际 {len(events)} 个"
 
-        assert call_count > 1, "同步生成器应该被多次调用（这是bug）"
-        assert yield_count > 3, "同步生成器每次都从头开始yield（这是bug）"
+
+class TestHandlerExceptionIsolation:
+    """验证 handler 异常不会中断事件迭代"""
+
+    @pytest.mark.asyncio
+    async def test_handler_exception_does_not_stop_iteration(self):
+        """handler 抛异常不影响后续事件的处理"""
+        app = FastMind()
+        scheduler = PerceptionScheduler(app)
+
+        received = []
+
+        def sensor(app):
+            for i in range(3):
+                yield Event(
+                    type="sensor.data",
+                    payload={"i": i},
+                    session_id="test",
+                )
+
+        async def handler(event):
+            received.append(event)
+            if event.payload["i"] == 0:
+                raise ValueError("intentional test error")
+
+        scheduler.register_loop("s", sensor, 0.05)
+        scheduler.register_event_handler(handler)
+
+        await scheduler.start()
+        await asyncio.sleep(0.08)
+        await scheduler.stop()
+
+        for e in received:
+            print(f"  事件 i={e.payload.get('i')}")
+
+        assert len(received) >= 3, f"应至少收到 3 个事件，实际 {len(received)} 个"
+        received_is = [e.payload["i"] for e in received]
+        assert 0 in received_is, "事件 i=0 应被处理"
+        assert 1 in received_is, "handler 异常后事件 i=1 应继续被处理"
+        assert 2 in received_is, "handler 异常后事件 i=2 应继续被处理"
 
 
 class TestBug2_SilentExceptionSwallowing:
@@ -164,9 +196,10 @@ class TestBug3_ApiFiltersNonSensorData:
 
 
 if __name__ == "__main__":
-    print("运行 Bug 复现测试...\n")
+    print("运行感知系统测试...\n")
 
-    asyncio.run(TestBug1_SyncGeneratorRepeatExecution().test_sync_generator_restarts_every_loop())
+    asyncio.run(TestSyncGeneratorExhaustion().test_sync_generator_recreated_after_exhaustion())
+    asyncio.run(TestHandlerExceptionIsolation().test_handler_exception_does_not_stop_iteration())
     asyncio.run(TestBug2_SilentExceptionSwallowing().test_exception_is_silently_swallowed())
     asyncio.run(TestBug3_HardcodedEventType().test_non_sensor_data_events_are_discarded())
     asyncio.run(TestBug3_ApiFiltersNonSensorData().test_api_filters_non_sensor_data_events())

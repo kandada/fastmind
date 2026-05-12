@@ -68,6 +68,10 @@ class AgentRegistry:
         """获取所有 Agent"""
         return self._agents.copy()
 
+    def add(self, name: str, agent: Agent) -> None:
+        """直接添加 Agent 实例"""
+        self._agents[name] = agent
+
     def __contains__(self, name: str) -> bool:
         return name in self._agents
 

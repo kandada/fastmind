@@ -155,6 +155,8 @@ class Session:
     async def push_event(self, event: Event) -> None:
         """推送事件到输入队列"""
         self._pending_input_events.append(event)
+        if len(self._pending_input_events) > self._max_history:
+            self._pending_input_events.popleft()
         await self.input_queue.put(event)
 
     async def _put_output(self, event: Event) -> None:
@@ -216,10 +218,23 @@ class Session:
                 if event.type == "resume":
                     self._state = self.STATE_RUNNING
                     self._restore_from_checkpoint()
-                    if self._current_node:
-                        next_node = self._current_node
+                    user_input = str(event.payload.get("user_input", ""))
+                    cancel_node = (
+                        self._checkpoint.get("cancel_node") if self._checkpoint else None
+                    )
+                    resume_node = (
+                        self._checkpoint.get("resume_node") if self._checkpoint else None
+                    )
+                    if cancel_node and user_input.lower() == "cancel":
+                        next_node = cancel_node
+                    elif resume_node:
+                        next_node = resume_node
+                    elif self._current_node:
+                        next_node = self.graph.get_next_node(
+                            self._current_node, self.state, event
+                        )
                     else:
-                        next_node = event.payload.get("resume_node", self.graph.entry_point)
+                        next_node = self.graph.entry_point
                 else:
                     self._state = self.STATE_RUNNING
                     next_node = self.graph.entry_point
@@ -274,6 +289,13 @@ class Session:
             node = self.graph.get_node(current_node)
             if not node:
                 logger.warning(f"Session {self.session_id}: node '{current_node}' not found")
+                await self._put_output(
+                    Event(
+                        type="error",
+                        payload={"node": current_node, "error": f"Node '{current_node}' not found"},
+                        session_id=self.session_id,
+                    )
+                )
                 break
 
             logger.debug(
@@ -290,7 +312,7 @@ class Session:
 
                     for output_event in output_events:
                         if output_event.type == "interrupt":
-                            self._save_checkpoint(current_node)
+                            self._save_checkpoint(current_node, output_event.payload)
                             self._state = self.STATE_INTERRUPTED
                             self._interrupted = True
                             await self._put_output(output_event)
@@ -319,15 +341,49 @@ class Session:
     async def _execute_subgraph(self, subgraph: Graph, event: Event) -> None:
         """执行子图"""
         next_node = subgraph.entry_point
+        iteration_count = 0
+        max_iterations = (
+            subgraph.max_iterations
+            if hasattr(subgraph, "max_iterations")
+            else Graph.DEFAULT_MAX_ITERATIONS
+        )
 
         while next_node and next_node != Graph.END_NODE and self._state == self.STATE_RUNNING:
+            iteration_count += 1
+            if iteration_count > max_iterations:
+                logger.error(
+                    f"Session {self.session_id}: subgraph exceeded max iterations ({max_iterations})"
+                )
+                await self._put_output(
+                    Event(
+                        type="error",
+                        payload={"error": f"Subgraph exceeded max iterations ({max_iterations})"},
+                        session_id=self.session_id,
+                    )
+                )
+                break
+
             node = subgraph.get_node(next_node)
             if not node:
+                logger.warning(f"Session {self.session_id}: subgraph node '{next_node}' not found")
+                await self._put_output(
+                    Event(
+                        type="error",
+                        payload={"node": next_node, "error": f"Node '{next_node}' not found in subgraph"},
+                        session_id=self.session_id,
+                    )
+                )
                 break
 
             try:
                 output_events = await self._execute_node(next_node, node, event)
                 for output_event in output_events:
+                    if output_event.type == "interrupt":
+                        self._save_checkpoint(next_node, output_event.payload)
+                        self._state = self.STATE_INTERRUPTED
+                        self._interrupted = True
+                        await self._put_output(output_event)
+                        return
                     await self._put_output(output_event)
 
                 next_node = subgraph.get_next_node(next_node, self.state, event)
@@ -382,24 +438,37 @@ class Session:
             if key in self.state and key not in new_state:
                 new_state[key] = self.state[key]
 
+        if not isinstance(new_state, State):
+            new_state = State(new_state)
         self.state = new_state
 
-    def _save_checkpoint(self, current_node: str) -> None:
+    def _save_checkpoint(
+        self, current_node: str, interrupt_payload: dict = None
+    ) -> None:
         """保存检查点（包含 state 和 pending events）"""
+        state_snapshot = {
+            k: v for k, v in self.state.items()
+            if k not in ("_output_queue", "_session_id")
+        }
         self._checkpoint = {
-            "state": copy.deepcopy(self.state),
+            "state": copy.deepcopy(state_snapshot),
             "current_node": current_node,
             "pending_events": list(self._pending_input_events),
         }
+        if interrupt_payload:
+            self._checkpoint["resume_node"] = interrupt_payload.get("resume_node")
+            self._checkpoint["cancel_node"] = interrupt_payload.get("cancel_node")
 
     def _restore_from_checkpoint(self) -> None:
         """恢复检查点"""
         if self._checkpoint:
-            self.state = copy.deepcopy(self._checkpoint["state"])
+            self.state = State(copy.deepcopy(self._checkpoint["state"]))
             self._current_node = self._checkpoint.get("current_node")
             self._interrupted = False
             pending = self._checkpoint.get("pending_events", [])
             self._pending_input_events = deque(pending)
+            self.state["_output_queue"] = self.output_queue
+            self.state["_session_id"] = self.session_id
 
 
 class Engine:
@@ -426,14 +495,6 @@ class Engine:
     async def stop(self) -> None:
         """停止引擎"""
         self._running = False
-
-        for task in self._tasks:
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-        self._tasks.clear()
 
         for session in self._sessions.values():
             await session.stop()

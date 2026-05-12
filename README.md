@@ -121,7 +121,7 @@ event = Event(type="user.message", payload={"text": "Hello"}, session_id="user_0
 Real-time streaming with zero polling:
 
 ```python
-@app.agent(name="chat_agent", stream=True)
+@app.agent(name="chat_agent")
 async def chat_agent(state: dict, event: Event) -> dict:
     output_queue = state["_output_queue"]
     session_id = state["_session_id"]
@@ -224,7 +224,8 @@ async def get_weather(city: str) -> str:
 
 from fastmind import ToolNode
 
-tool_node = ToolNode(app.get_tools())
+tool_node = ToolNode(app.get_tools())                      # all tools
+# tool_node = ToolNode(app.get_tools(tools=["get_weather"])) # specific tools only
 
 def has_tool_calls(state: dict, event: Event) -> str:
     return "tools" if state.get("tool_calls") else None
@@ -301,6 +302,26 @@ pytest tests/ -v
 ```
 
 ## Changelog
+
+### v0.1.10
+- **New Feature**: `app.get_tools(tools=None)` and `app.get_tool_schemas(tools=None)` now support filtering by tool name
+- **Bug Fix**: Fixed synchronous generator exhaustion deadlock in PerceptionLoop (generator now recreates instead of idle)
+- **Bug Fix**: Fixed HITL interrupt resume re-executing interrupt node (now correctly routes to resume_node/cancel_node)
+- **Bug Fix**: Fixed `_execute_subgraph` not handling interrupt events (subgraph interrupts now properly interrupt session)
+- **Bug Fix**: Fixed `detect_cycles()` not traversing conditional edges (cycles via condition edges are now detected)
+- **Bug Fix**: Fixed `get_next_node()` not falling back to regular edges when conditional edges don't match
+- **Bug Fix**: Fixed `_merge_state` losing State type methods
+- **Bug Fix**: Fixed `engine.stop()` dead task cleanup loop (was always empty)
+- **Bug Fix**: Fixed perception event handler exception causing entire iteration to stop
+- **Bug Fix**: Fixed `add_message_if_new` not comparing extra fields
+- **Bug Fix**: Moved `import json` from inside ToolNode loops to module top level
+- **Improvement**: Added `ToolRegistry.add()` / `AgentRegistry.add()` public methods
+- **Improvement**: `register_tool()` / `register_agent()` now use public API instead of private dict access
+- **Improvement**: Added debug log for system session events discarded by perception handler
+- **Improvement**: `_execute_subgraph` now has max_iterations protection
+- **Improvement**: Node not found now emits error event instead of silent failure
+- **Improvement**: Perception event handler registered before scheduler starts (was race condition)
+- **Improvement**: Added `Graph.add_interrupt()` now creates edges to resume_node/cancel_node
 
 ### v0.1.9
 - **Bug Fix**: Fixed sync generator state preservation in PerceptionLoop (sync generators now maintain state across loops instead of restarting)

@@ -85,6 +85,9 @@ class PerceptionLoop:
                 if self._sync_generator is not None and not self._generator_exhausted:
                     events = self._sync_generator
                     await self._iterate_sync_events(events, event_handler)
+                    if self._generator_exhausted:
+                        self._sync_generator = None
+                        self._generator_exhausted = False
                 elif self._sync_generator is None:
                     gen = self.func(self.app)
 
@@ -100,6 +103,9 @@ class PerceptionLoop:
                         if self._is_sync_generator_function(self.func):
                             self._sync_generator = gen
                             await self._iterate_sync_events(gen, event_handler)
+                            if self._generator_exhausted:
+                                self._sync_generator = None
+                                self._generator_exhausted = False
                         else:
                             await self._iterate_sync_events(gen, event_handler)
 
@@ -117,22 +123,29 @@ class PerceptionLoop:
             async for event in events:
                 if not self._running:
                     break
-                await event_handler(event)
+                try:
+                    await event_handler(event)
+                except Exception as e:
+                    logger.error(
+                        f"Error in perception handler for '{self.name}': {e}"
+                    )
         except StopAsyncIteration:
             pass
 
     async def _iterate_sync_events(self, events: Iterator, event_handler: Callable) -> None:
         """迭代同步事件"""
-        try:
-            while self._running:
-                try:
-                    event = next(events)
-                    await event_handler(event)
-                except StopIteration:
-                    self._generator_exhausted = True
-                    break
-        except Exception as e:
-            logger.error(f"Error iterating sync events in '{self.name}': {e}")
+        while self._running:
+            try:
+                event = next(events)
+            except StopIteration:
+                self._generator_exhausted = True
+                break
+            try:
+                await event_handler(event)
+            except Exception as e:
+                logger.error(
+                    f"Error in perception handler for '{self.name}': {e}"
+                )
 
 
 class PerceptionScheduler:
@@ -173,6 +186,8 @@ class PerceptionScheduler:
 
     async def start(self) -> None:
         """启动所有感知循环"""
+        if self._running:
+            return
         self._running = True
 
         for name, func, interval in self.app.get_perceptions():
