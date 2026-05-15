@@ -1,4 +1,4 @@
-"""执行引擎 - 事件驱动的图执行"""
+"""执行引擎 - 事件驱动的图执行 + VLA 快循环"""
 
 from typing import Any, Optional
 import asyncio
@@ -10,6 +10,7 @@ from .event import Event
 from .graph import Graph
 from .app import FastMind
 from .state import State
+from .signal import SignalBus
 from ..utils.logging import get_logger
 
 logger = get_logger("fastmind.engine")
@@ -113,6 +114,9 @@ class Session:
         self._event_history: list[str] = []
         self._max_history = 100
         self._last_event_time: float = time.time()
+        self.signal_bus = SignalBus()
+        self._vla_task: Optional[asyncio.Task] = None
+        self._signal_tasks: list[asyncio.Task] = []
 
         self.state["_output_queue"] = self.output_queue
         self.state["_session_id"] = self.session_id
@@ -141,6 +145,23 @@ class Session:
         if self._task is None or self._task.done():
             self._task = asyncio.create_task(self._run())
 
+        # 启动 VLA 快循环
+        if self.app.has_vla() and (self._vla_task is None or self._vla_task.done()):
+            self._vla_task = asyncio.create_task(self._vla_scheduler())
+
+        # 启动信号源
+        self._start_signals()
+
+    def _start_signals(self) -> None:
+        """启动所有注册的信号源（每个信号独立 task）"""
+        signals = self.app.get_signals()
+        running = {s.get_name() for s in self._signal_tasks}
+        for name, sig in signals.items():
+            if name not in running:
+                task = asyncio.create_task(self._run_signal(name, sig))
+                task.set_name(name)
+                self._signal_tasks.append(task)
+
     async def stop(self) -> None:
         """停止会话"""
         self._state = self.STATE_STOPPED
@@ -151,6 +172,20 @@ class Session:
             except asyncio.CancelledError:
                 pass
             self._task = None
+
+        if self._vla_task:
+            self._vla_task.cancel()
+            try:
+                await self._vla_task
+            except asyncio.CancelledError:
+                pass
+            self._vla_task = None
+
+        for task in self._signal_tasks:
+            task.cancel()
+        if self._signal_tasks:
+            await asyncio.gather(*self._signal_tasks, return_exceptions=True)
+            self._signal_tasks = []
 
     async def push_event(self, event: Event) -> None:
         """推送事件到输入队列"""
@@ -259,6 +294,84 @@ class Session:
                     )
                 )
 
+    async def _vla_scheduler(self) -> None:
+        """VLA 快循环调度器
+
+        遍历所有注册的 @app.vla，按各自频率调度执行。
+        每个 VLA 的输出按通道名路由到对应的 @app.vla_action。
+        """
+        vlas = self.app.get_vlas()
+        actions = self.app.get_vla_actions()
+        last_ticks: dict[str, float] = {}
+
+        logger.debug(
+            f"Session {self.session_id}: VLA scheduler started "
+            f"({len(vlas)} VLAs: {list(vlas.keys())})"
+        )
+
+        while self._state != self.STATE_STOPPED:
+            now = time.time()
+
+            for name, cfg in vlas.items():
+                # 频率控制
+                interval = 1.0 / cfg.frequency
+                last = last_ticks.get(name, 0)
+                if now - last < interval:
+                    continue
+                last_ticks[name] = now
+
+                # 检查 LLM 暂停信号
+                if self.state.get("llm", {}).get("vla_paused", False):
+                    continue
+
+                # VLA 推理
+                try:
+                    action_dict = await cfg.func(self.state, self.signal_bus)
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error(
+                        f"Session {self.session_id}: VLA '{name}' inference error: {e}"
+                    )
+                    continue
+
+                # 按通道名路由到 action executor
+                if isinstance(action_dict, dict):
+                    for channel, vector in action_dict.items():
+                        if channel not in actions:
+                            continue
+                        try:
+                            result = await actions[channel].execute(vector)
+                            self.state.setdefault("vla_actions", {})[channel] = vector
+                            if isinstance(result, dict):
+                                self.state.setdefault("vla_action_results", {})[channel] = result
+                        except asyncio.CancelledError:
+                            raise
+                        except Exception as e:
+                            logger.error(
+                                f"Session {self.session_id}: VLA action '{channel}' error: {e}"
+                            )
+
+            await asyncio.sleep(0.001)
+
+    async def _run_signal(self, name: str, signal_cfg) -> None:
+        """运行单个信号源
+
+        按 interval 周期调用信号函数，结果写入 SignalBus。
+        """
+        while self._state != self.STATE_STOPPED:
+            try:
+                result = await signal_cfg.func()
+                self.signal_bus.write(name, result)
+                await asyncio.sleep(signal_cfg.interval)
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(
+                    f"Session {self.session_id}: signal '{name}' error: {e}"
+                )
+                await asyncio.sleep(signal_cfg.interval)
+
     async def _execute_node_chain(self, start_node: str, event: Event) -> None:
         """执行节点链"""
         current_node = start_node
@@ -328,7 +441,10 @@ class Session:
 
                 logger.debug(f"Session {self.session_id}: next node is '{current_node}'")
             except Exception as e:
-                logger.error(f"Session {self.session_id}: error in node {current_node}: {e}")
+                logger.error(
+                    f"Session {self.session_id}: error in node {current_node}: {e}",
+                    exc_info=True,
+                )
                 await self._put_output(
                     Event(
                         type="error",
@@ -442,6 +558,47 @@ class Session:
             new_state = State(new_state)
         self.state = new_state
 
+    def _safe_deepcopy(self, obj: Any, max_depth: int = 10) -> Any:
+        """安全的 deepcopy，遇到不可序列化对象时转为字符串
+
+        Args:
+            obj: 要拷贝的对象
+            max_depth: 递归最大深度，防止无限递归
+
+        Returns:
+            深拷贝结果，或不可序列化时的字符串表示
+        """
+        if max_depth <= 0:
+            return str(obj)
+
+        # 基本类型直接返回
+        if obj is None or isinstance(obj, (bool, int, float, str, bytes)):
+            return obj
+
+        try:
+            return copy.deepcopy(obj)
+        except (TypeError, RuntimeError, AttributeError):
+            pass
+
+        # 逐项处理容器类型
+        if isinstance(obj, dict):
+            return {
+                k: self._safe_deepcopy(v, max_depth - 1)
+                for k, v in obj.items()
+            }
+        if isinstance(obj, (list, tuple)):
+            return type(obj)(
+                self._safe_deepcopy(item, max_depth - 1) for item in obj
+            )
+        if isinstance(obj, set):
+            return {self._safe_deepcopy(item, max_depth - 1) for item in obj}
+
+        # 兜底：转为字符串
+        try:
+            return str(obj)
+        except Exception:
+            return "<unpicklable>"
+
     def _save_checkpoint(
         self, current_node: str, interrupt_payload: dict = None
     ) -> None:
@@ -451,7 +608,7 @@ class Session:
             if k not in ("_output_queue", "_session_id")
         }
         self._checkpoint = {
-            "state": copy.deepcopy(state_snapshot),
+            "state": self._safe_deepcopy(state_snapshot),
             "current_node": current_node,
             "pending_events": list(self._pending_input_events),
         }
@@ -462,7 +619,7 @@ class Session:
     def _restore_from_checkpoint(self) -> None:
         """恢复检查点"""
         if self._checkpoint:
-            self.state = State(copy.deepcopy(self._checkpoint["state"]))
+            self.state = State(self._safe_deepcopy(self._checkpoint["state"]))
             self._current_node = self._checkpoint.get("current_node")
             self._interrupted = False
             pending = self._checkpoint.get("pending_events", [])

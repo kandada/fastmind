@@ -1,6 +1,6 @@
 """FastMind - 具身智能多Agent系统框架"""
 
-__version__ = "0.1.10"
+__version__ = "0.2.0"
 
 from .core.app import FastMind
 from .core.graph import Graph
@@ -15,6 +15,8 @@ from .core.perception import (
     Timer,
     SensorManager,
 )
+from .core.signal import Signal, SignalBus
+from .core.vla import VLAConfig, VLARegistry, VLActionRegistry, VLAActionNode, ActionSpace
 
 __all__ = [
     "FastMind",
@@ -36,4 +38,11 @@ __all__ = [
     "PerceptionLoop",
     "Timer",
     "SensorManager",
+    "Signal",
+    "SignalBus",
+    "VLAConfig",
+    "VLARegistry",
+    "VLActionRegistry",
+    "VLAActionNode",
+    "ActionSpace",
 ]

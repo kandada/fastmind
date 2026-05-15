@@ -1,6 +1,6 @@
 """FastMindAPI - 对外接口"""
 
-from typing import Any, Optional, Callable
+from typing import Any, Optional, Callable, Union
 import asyncio
 from collections.abc import AsyncIterator
 
@@ -247,6 +247,93 @@ class FastMindAPI:
             name: 图名称
         """
         return self.app.get_graph(name)
+
+    # ── SignalBus 访问 ──────────────────────────────────────────
+
+    def read_signal(self, session_id: str, name: str) -> Optional[Any]:
+        """读取高频信号
+
+        从指定会话的 SignalBus 中读取信号的最新值。
+        SignalBus 是高频数据的 last-value cache，无队列，零开销。
+
+        Args:
+            session_id: 会话 ID
+            name: 信号名称
+
+        Returns:
+            信号最新值，如果信号或会话不存在返回 None
+
+        用法:
+            frame = fm_api.read_signal("npc_001", "vision")
+            pos = fm_api.read_signal("npc_001", "proprioception")
+        """
+        session = self._engine.get_session(session_id)
+        if not session:
+            return None
+        return session.signal_bus.read(name)
+
+    def write_signal(self, session_id: str, name: str, data: Any) -> None:
+        """写入高频信号
+
+        将数据写入指定会话的 SignalBus。用于注入外部传感器数据
+        或手动控制信号值（覆盖信号源的自动更新）。
+
+        Args:
+            session_id: 会话 ID
+            name: 信号名称
+            data: 信号数据
+
+        用法:
+            fm_api.write_signal("npc_001", "gps", {"lat": 39.9, "lng": 116.4})
+        """
+        session = self._engine.get_or_create_session(session_id)
+        if not session.is_running:
+            asyncio.create_task(session.start())
+        session.signal_bus.write(name, data)
+
+    def list_signals(self, session_id: str) -> list[str]:
+        """列出会话中所有可用的信号名
+
+        Args:
+            session_id: 会话 ID
+
+        Returns:
+            信号名称列表，会话不存在时返回空列表
+        """
+        session = self._engine.get_session(session_id)
+        if not session:
+            return []
+        return list(session.signal_bus.all().keys())
+
+    # ── VLA 控制 ─────────────────────────────────────────────────
+
+    def pause_vla(self, session_id: str) -> None:
+        """暂停 VLA 快循环
+
+        VLA 暂停后，@app.vla 函数停止被调度，NPC/机器人动作冻结。
+        LLM 慢循环和 SignalBus 不受影响。
+
+        Args:
+            session_id: 会话 ID
+
+        用法:
+            fm_api.pause_vla("npc_001")   # NPC 停止动作
+            # ... 做其他操作 ...
+            fm_api.resume_vla("npc_001")  # NPC 恢复动作
+        """
+        session = self._engine.get_session(session_id)
+        if session:
+            session.state.setdefault("llm", {})["vla_paused"] = True
+
+    def resume_vla(self, session_id: str) -> None:
+        """恢复 VLA 快循环
+
+        Args:
+            session_id: 会话 ID
+        """
+        session = self._engine.get_session(session_id)
+        if session:
+            session.state.setdefault("llm", {})["vla_paused"] = False
 
     async def get_output_event(self, session_id: str) -> Optional[Event]:
         """获取单个输出事件（非阻塞）

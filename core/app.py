@@ -1,19 +1,18 @@
 """FastMind 主类"""
 
-from typing import Callable, Any, Optional
-from collections.abc import AsyncGenerator
-import asyncio
+from typing import Callable, Optional
 
 from .graph import Graph
-from .event import Event
 from .tool import ToolRegistry, Tool
 from .node import AgentRegistry, Agent
+from .signal import Signal
+from .vla import VLAConfig, VLARegistry, VLActionRegistry, VLAActionNode, ActionSpace
 
 
 class FastMind:
     """FastMind 框架主类
 
-    提供装饰器风格的 API，用于注册 agent、tool、graph 和感知循环。
+    提供装饰器风格的 API，用于注册 agent、tool、graph、感知循环、信号和 VLA。
 
     用法示例:
         app = FastMind()
@@ -38,6 +37,9 @@ class FastMind:
         self._agent_registry = AgentRegistry()
         self._graphs: dict[str, Graph] = {}
         self._perceptions: list[tuple[str, Callable, float]] = []
+        self._signals: dict[str, Signal] = {}
+        self._vla_registry = VLARegistry()
+        self._vla_action_registry = VLActionRegistry()
 
     def tool(
         self,
@@ -232,6 +234,140 @@ class FastMind:
     def get_agent(self, name: str) -> Optional[Agent]:
         """获取 Agent"""
         return self._agent_registry.get(name)
+
+    def signal(
+        self,
+        name: Optional[str] = None,
+        interval: float = 1.0,
+    ) -> Callable:
+        """装饰器：注册高频信号
+
+        信号与 Event 平行，是高频连续数据的载体。
+        信号数据直写 SignalBus，不经过 event 队列。
+
+        Args:
+            name: 信号名称，默认使用函数名
+            interval: 更新间隔（秒）
+
+        Returns:
+            装饰器函数
+
+        用法示例:
+            @app.signal(name="vision", interval=1/30)
+            async def npc_vision():
+                return game_engine.render_npc_view()
+        """
+        if interval <= 0:
+            raise ValueError(f"signal interval must be positive, got {interval}")
+
+        def decorator(func: Callable) -> Callable:
+            signal_name = name or func.__name__
+            self._signals[signal_name] = Signal(
+                name=signal_name,
+                interval=interval,
+                func=func,
+            )
+            return func
+
+        return decorator
+
+    def vla(
+        self,
+        name: Optional[str] = None,
+        frequency: float = 10.0,
+        input_signals: Optional[list[str]] = None,
+    ) -> Callable:
+        """装饰器：注册 VLA 推理节点
+
+        VLA 节点由框架按 frequency 自动调度，不经过 graph。
+        签名: async (state, signal_bus) -> dict[str, list[float]]
+        返回: 动作通道名 → 动作向量
+
+        Args:
+            name: VLA 名称，默认使用函数名
+            frequency: 目标控制频率 (Hz)
+            input_signals: 输入信号名称列表
+
+        Returns:
+            装饰器函数
+
+        用法示例:
+            @app.vla(name="navigation", frequency=30.0)
+            async def navigation_vla(state, signal_bus):
+                vision = signal_bus.read("vision")
+                return {"body": [0.5, 0, 0, 0.1]}
+        """
+        return self._vla_registry.register(
+            name=name,
+            frequency=frequency,
+            input_signals=input_signals,
+        )
+
+    def vla_action(
+        self,
+        name: Optional[str] = None,
+        action_space: Optional[ActionSpace] = None,
+    ) -> Callable:
+        """装饰器：注册 VLA 动作执行器
+
+        VLA 的动作输出通过通道名路由到对应的动作执行器。
+
+        Args:
+            name: 动作名称（通道名），默认使用函数名
+            action_space: 动作空间定义
+
+        Returns:
+            装饰器函数
+
+        用法示例:
+            @app.vla_action(name="body", action_space=ActionSpace(4))
+            async def body_executor(action):
+                await game_engine.move(action[0], action[1], action[2], action[3])
+        """
+        return self._vla_action_registry.register(
+            name=name,
+            action_space=action_space,
+        )
+
+    def register_signal(self, name: str, signal: Signal) -> None:
+        """手动注册信号"""
+        self._signals[name] = signal
+
+    def register_vla(self, name: str, cfg: VLAConfig) -> None:
+        """手动注册 VLA 配置"""
+        self._vla_registry.add(name, cfg)
+
+    def register_vla_action(self, name: str, node: VLAActionNode) -> None:
+        """手动注册 VLA 动作执行器"""
+        self._vla_action_registry.add(name, node)
+
+    def get_signals(self) -> dict[str, Signal]:
+        """获取所有信号"""
+        return self._signals.copy()
+
+    def get_signal(self, name: str) -> Optional[Signal]:
+        """获取信号"""
+        return self._signals.get(name)
+
+    def get_vlas(self) -> dict[str, VLAConfig]:
+        """获取所有 VLA 配置"""
+        return self._vla_registry.get_all()
+
+    def get_vla(self, name: str) -> Optional[VLAConfig]:
+        """获取 VLA 配置"""
+        return self._vla_registry.get(name)
+
+    def get_vla_actions(self) -> dict[str, VLAActionNode]:
+        """获取所有 VLA 动作执行器"""
+        return self._vla_action_registry.get_all()
+
+    def get_vla_action(self, name: str) -> Optional[VLAActionNode]:
+        """获取 VLA 动作执行器"""
+        return self._vla_action_registry.get(name)
+
+    def has_vla(self) -> bool:
+        """检查是否注册了任何 VLA"""
+        return len(self._vla_registry) > 0
 
     def get_perceptions(self) -> list[tuple[str, Callable, float]]:
         """获取所有感知循环"""

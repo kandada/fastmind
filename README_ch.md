@@ -1,6 +1,6 @@
 # FastMind 🧠
 
-轻量级事件驱动的具身智能多 Agent 系统框架。
+轻量级事件驱动的具身智能 Agent 框架，支持 LLM + VLA 双循环架构。
 
 [![PyPI 版本](https://badge.fury.io/py/fastmind.svg)](https://badge.fury.io/py/fastmind)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -8,45 +8,26 @@
 
 ## 核心特性
 
-- **类 FastAPI 装饰器**：熟悉的 `@app.agent`、`@app.tool`、`@app.perception` 语法，极易上手
-- **状态图架构**：像画流程图一样构建智能体工作流，无需编写复杂嵌套循环
-- **事件驱动**：基于 asyncio，无需轮询，高性能异步执行
-- **内置流式输出**：实时流式输出，支持背压控制
-- **Human-in-the-Loop**：支持中断和恢复，可进行人工审批
-- **感知循环**：原生支持传感器、定时器和外部触发器
-- **工具调用**：ReAct 风格的 Agent → Tool → Agent 循环
-- **会话隔离**：多用户支持，每个会话状态独立
-- **轻量级**：约 8000 行代码，不依赖其他框架
+- **双循环架构**：LLM 慢循环（规划/推理）与 VLA 快循环（实时控制）在同一个 Session 中并发运行
+- **Signal + Event 双通信元语**：Event 处理离散消息，Signal 处理高频连续数据（last-value cache，零拷贝）
+- **类 FastAPI 装饰器**：`@app.agent`、`@app.tool`、`@app.vla`、`@app.vla_action`、`@app.signal` 统一风格
+- **状态图架构**：像画流程图一样构建工作流
+- **事件驱动**：基于 asyncio，无轮询
+- **Human-in-the-Loop**：支持中断恢复、人工审批
+- **感知循环**：原生支持传感器、定时器
+- **动作通道路由**：VLA 输出通过通道名映射到多个执行器（N:M）
+- **会话隔离**：多用户、独立状态
+- **轻量级**：核心约 8000 行
 
 ## 安装
-
-### 从 PyPI 安装（推荐）
 
 ```bash
 pip install fastmind
 ```
 
-### 从 GitHub 安装
-
-```bash
-pip install git+https://github.com/kandada/fastmind.git
-```
-
-安装包含示例的版本：
-
-```bash
-pip install git+https://github.com/kandada/fastmind.git#egg=fastmind[examples]
-```
-
-本地开发安装：
-
-```bash
-git clone https://github.com/kandada/fastmind.git
-cd fastmind
-pip install -e ".[all]"
-```
-
 ## 快速开始
+
+### LLM Agent
 
 ```python
 from fastmind import FastMind, Graph, Event
@@ -58,7 +39,6 @@ app = FastMind()
 async def chat_agent(state: dict, event: Event) -> dict:
     state.setdefault("messages", [])
     state["messages"].append({"role": "user", "content": event.payload.get("text", "")})
-    # 在这里调用你的 LLM
     state["messages"].append({"role": "assistant", "content": "你好！"})
     return state
 
@@ -70,189 +50,133 @@ app.register_graph("main", graph)
 async def main():
     api = FastMindAPI(app)
     await api.start()
-    await api.push_event("user_001", Event("user.message", {"text": "你好！"}, "user_001"))
+    await api.push_event("user_001", Event("user.message", {"text": "你好"}, "user_001"))
     await api.stop()
 
 import asyncio
 asyncio.run(main())
 ```
 
-## 核心概念
-
-### State（状态）
-
-会话数据的容器，类似 dict，节点间共享：
+### LLM Agent + 工具调用（ReAct）
 
 ```python
-state["messages"].append({"role": "user", "content": "你好"})
-```
+from fastmind import FastMind, Graph, Event, ToolNode, Tool
+from fastmind.contrib import FastMindAPI
 
-### Node（节点）
+app = FastMind()
 
-处理事件并返回更新状态的异步函数：
-
-```python
-async def my_node(state: dict, event: Event) -> dict:
-    state["processed"] = True
-    return state
-```
-
-### Graph（图）
-
-定义工作流的节点和边的集合：
-
-```python
-graph = Graph()
-graph.add_node("agent", chat_agent)
-graph.add_edge("agent", "tool_node")
-graph.set_entry_point("agent")
-```
-
-### Event（事件）
-
-驱动图执行的外部或内部触发器：
-
-```python
-event = Event(type="user.message", payload={"text": "你好"}, session_id="user_001")
-```
-
-## 流式输出
-
-零轮询的实时流式输出：
-
-```python
-@app.agent(name="chat_agent")
-async def chat_agent(state: dict, event: Event) -> dict:
-    output_queue = state["_output_queue"]
-    session_id = state["_session_id"]
-    
-    async def stream_llm():
-        for chunk in llm_stream():
-            for char in chunk:
-                output_queue.put_nowait(Event(
-                    type="stream.chunk",
-                    payload={"delta": char},
-                    session_id=session_id
-                ))
-                await asyncio.sleep(0.03)
-        output_queue.put_nowait(Event(type="stream.end", payload={}, session_id=session_id))
-    
-    asyncio.create_task(stream_llm())
-    return state
-```
-
-## Human-in-the-Loop（人工介入）
-
-中断和恢复以进行人工审批：
-
-```python
-@app.agent(name="order_agent")
-async def order_agent(state: dict, event: Event) -> dict:
-    state.setdefault("orders", [])
-    amount = event.payload.get("amount", 0)
-    state["orders"].append({"amount": amount, "status": "pending"})
-    if amount > 1000:
-        state["need_approval"] = True
-    return state
-
-async def approve_node(state: dict, event: Event) -> tuple[dict, list[Event]]:
-    return state, [Event(
-        type="interrupt",
-        payload={"prompt": "是否批准此交易？", "resume_node": "confirm"},
-        session_id=event.session_id
-    )]
-
-async def confirm_node(state: dict, event: Event) -> dict:
-    if state.get("orders"):
-        state["orders"][-1]["status"] = "confirmed"
-    return state
-
-async def reject_node(state: dict, event: Event) -> dict:
-    if state.get("orders"):
-        state["orders"][-1]["status"] = "rejected"
-    return state
-
-graph = Graph()
-graph.add_node("order", order_agent)
-graph.add_node("approve", approve_node)
-graph.add_node("confirm", confirm_node)
-graph.add_node("reject", reject_node)
-
-graph.add_edge("order", "approve", condition=lambda s: s.get("need_approval"))
-graph.add_edge("approve", "confirm")
-graph.add_edge("approve", "reject")
-graph.set_entry_point("order")
-
-app.register_graph("main", graph)
-```
-
-在应用层处理中断：
-
-```python
-async def main():
-    api = FastMindAPI(app)
-    await api.start()
-    
-    event = Event("user.message", {"amount": 2000}, "user_001")
-    await api.push_event("user_001", event)
-    
-    async for ev in api.stream_events("user_001"):
-        if ev.type == "interrupt":
-            print(f"中断: {ev.payload['prompt']}")
-            await api.resume_session("user_001", "confirm")  # 或 "reject"
-```
-
-## 感知循环
-
-响应传感器、定时器和外部事件：
-
-```python
-@app.perception(interval=5.0, name="sensor_monitor")
-async def sensor_monitor(app: FastMind):
-    while True:
-        data = await read_sensor()
-        yield Event(type="sensor.data", payload=data, session_id="system")
-        await asyncio.sleep(5.0)
-```
-
-## 工具调用（ReAct）
-
-```python
-@app.tool(name="get_weather", description="获取天气")
+@app.tool(name="get_weather", description="获取城市天气")
 async def get_weather(city: str) -> str:
-    return f"{city} 天气晴朗"
+    return f"{city} 晴朗，20°C"
 
-from fastmind import ToolNode
+async def chat_agent(state: dict, event: Event) -> dict:
+    state.setdefault("messages", [])
+    state["messages"].append({"role": "user", "content": event.payload.get("text", "")})
+    if "天气" in event.payload.get("text", ""):
+        state["tool_calls"] = [
+            {"id": "call_1", "function": {"name": "get_weather", "arguments": '{"city": "北京"}'}}
+        ]
+    else:
+        state["messages"].append({"role": "assistant", "content": "我可以帮你查天气！"})
+    return state
 
-tool_node = ToolNode(app.get_tools())                      # 所有工具
-# tool_node = ToolNode(app.get_tools(tools=["get_weather"])) # 按需过滤
+tool_node = ToolNode(app.get_tools())
 
 def has_tool_calls(state: dict, event: Event) -> str:
     return "tools" if state.get("tool_calls") else None
 
-graph.add_conditional_edges("agent", has_tool_calls, {None: "__end__"})
+graph = Graph()
+graph.add_node("agent", chat_agent)
+graph.add_node("tools", tool_node)
+graph.add_conditional_edges("agent", has_tool_calls, {"tools": "tools", None: "__end__"})
 graph.add_edge("tools", "agent")
+graph.set_entry_point("agent")
+app.register_graph("main", graph)
+```
+
+### VLA Agent（NPC 控制）
+
+```python
+from fastmind import FastMind, Graph, Event, ActionSpace
+from fastmind.contrib import FastMindAPI
+
+app = FastMind()
+
+@app.signal(name="vision", interval=1/30)
+async def npc_vision():
+    return {"frame_id": 1, "objects": []}
+
+@app.vla(name="navigation", frequency=30.0)
+async def navigation_vla(state, signal_bus):
+    vision = signal_bus.read("vision")
+    goal = state.get("llm", {}).get("goal", "idle")
+    return {"body": [0.5, 0.0, 0.0]}
+
+@app.vla_action(name="body", action_space=ActionSpace(3))
+async def body_executor(action):
+    await game_engine.move(action[0], action[1], action[2])
+
+@app.agent(name="npc_brain")
+async def npc_brain(state, event):
+    if event.type == "user.message":
+        state.setdefault("llm", {})["goal"] = "go_to_castle"
+    return state
+
+graph = Graph()
+graph.add_node("brain", npc_brain)
+graph.set_entry_point("brain")
+app.register_graph("main", graph)
+```
+
+## 核心概念
+
+| 概念 | 说明 |
+|------|------|
+| **State** | 会话级共享字典，所有循环共用 |
+| **Event** | 离散消息（用户输入、LLM 回复）— 队列式、push |
+| **Signal** | 连续数据（摄像头帧、关节角）— 最新值缓存、pull |
+| **Graph** | LLM 工作流拓扑（节点 + 边） |
+| **@app.agent** | LLM 推理节点，event-driven |
+| **@app.vla** | VLA 推理节点，time-driven，独立调度 |
+| **@app.vla_action** | 动作执行器，通过通道名接收 VLA 输出 |
+| **@app.signal** | 高频信号源，直写 SignalBus |
+| **@app.perception** | 低频感知，yield Event（已有） |
+| **Action Channel** | 通道路由，N:M 映射 VLA → 执行器 |
+
+## 架构
+
+```
+Session
+├── SignalBus                     ← 高频数据通道（零拷贝）
+├── LLM Task (_run)               ← 慢循环，event-driven
+│   └── Graph: Agent → Tool → ...
+├── VLA Task (_vla_scheduler)     ← 快循环，time-driven
+│   ├── @app.vla 推理
+│   ├── 动作通道路由
+│   └── @app.vla_action 执行
+└── State（黑板模式）
+    ├── llm/: goal, plan, messages
+    └── vla/: actions, status, memory
 ```
 
 ## 示例
 
-| 示例 | 描述 |
+| 示例 | 说明 |
 |------|------|
 | [simple_chat.py](examples/simple_chat.py) | 基础聊天 |
 | [simple_chat_with_tool.py](examples/simple_chat_with_tool.py) | 工具调用（ReAct）|
 | [streaming_chat.py](examples/streaming_chat.py) | 实时流式输出 |
 | [human_in_loop.py](examples/human_in_loop.py) | 人工审批工作流 |
-| [perception_loop.py](examples/perception_loop.py) | 传感器数据处理 |
+| [perception_loop.py](examples/perception_loop.py) | 传感器处理 |
 | [drone.py](examples/drone.py) | 定时感知 |
-| [companion_bot.py](examples/companion_bot.py) | 多智能体对话 |
-| [humanoid_robot.py](examples/humanoid_robot.py) | 多工具协作 |
+| [companion_bot.py](examples/companion_bot.py) | 多 Agent 对话 |
+| [humanoid_robot.py](examples/humanoid_robot.py) | 多工具机器人控制 |
 | [sleep_assessment.py](examples/sleep_assessment.py) | 多状态 HITL 流程 |
 | [comprehensive_assistant.py](examples/comprehensive_assistant.py) | 全功能助手 |
-
-运行示例：
+| [npc_vla.py](examples/npc_vla.py) | **VLA 双循环 NPC（新）** |
 
 ```bash
-python -m fastmind.examples.simple_chat
+python -m fastmind.examples.npc_vla
 ```
 
 ## API 参考
@@ -262,96 +186,35 @@ python -m fastmind.examples.simple_chat
 ```python
 api = FastMindAPI(app)
 
-await api.start()                    # 启动引擎和感知循环
-await api.push_event(session_id, event)  # 推送事件到会话
-async for ev in api.stream_events(session_id):  # 流式获取输出事件
-    print(ev)
-await api.stop()                     # 停止引擎
-```
+await api.start()
+await api.push_event(session_id, event)
+async for ev in api.stream_events(session_id): ...
 
-### Session
+# VLA/Signal 新增方法:
+frame = api.read_signal(session_id, "vision")      # 读信号
+api.write_signal(session_id, "gps", data)           # 写信号
+signals = api.list_signals(session_id)              # 列出信号
+api.pause_vla(session_id)                            # 暂停 VLA
+api.resume_vla(session_id)                           # 恢复 VLA
 
-```python
-session = api.get_session(session_id)
-state = session.state                 # 获取会话状态
-await session.wait_for_output(timeout=5.0)  # 等待输出事件
-```
-
-## 架构图
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                      FastMindAPI                         │
-│  ┌─────────────────┐    ┌────────────────────────────┐  │
-│  │ PerceptionLoop   │───▶│        Engine              │  │
-│  │ Scheduler       │    │  ┌──────────────────────┐  │  │
-│  └─────────────────┘    │  │ Session (per user)   │  │  │
-│                         │  │  ├─ State           │  │  │
-│                         │  │  ├─ Event Queue     │  │  │
-│                         │  │  └─ Output Queue    │  │  │
-│                         │  └──────────────────────┘  │  │
-│                         └────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-```
-
-## 测试
-
-```bash
-pip install fastmind[dev]
-pytest tests/ -v
+await api.stop()
 ```
 
 ## 更新日志
 
-### v0.1.10
-- **新功能**: `app.get_tools(tools=None)` 和 `app.get_tool_schemas(tools=None)` 支持按工具名称过滤
-- **Bug 修复**: 修复感知循环中同步生成器耗尽后永久空闲问题（耗尽后自动重新创建）
-- **Bug 修复**: 修复 HITL 中断恢复后重新执行中断节点的问题（现在正确路由到 resume_node/cancel_node）
-- **Bug 修复**: 修复子图中 interrupt 事件未被识别的问题（子图中断现在正确中断会话）
-- **Bug 修复**: 修复 `detect_cycles()` 不遍历条件边的问题（条件边形成的环现在可被检测）
-- **Bug 修复**: 修复 `get_next_node()` 条件边无匹配时不回退到普通边的问题
-- **Bug 修复**: 修复 `_merge_state` 丢失 State 类型方法的问题
-- **Bug 修复**: 修复 `engine.stop()` 中死代码 task 清理循环
-- **Bug 修复**: 修复感知事件 handler 异常导致整个迭代停止的问题
-- **Bug 修复**: 修复 `add_message_if_new` 不比较额外字段的问题
-- **Bug 修复**: 将 `import json` 从 ToolNode 循环内移到模块顶部
-- **改进**: 新增 `ToolRegistry.add()` / `AgentRegistry.add()` 公有方法
-- **改进**: `register_tool()` / `register_agent()` 改用公有 API 而非直接访问私有字典
-- **改进**: 对感知处理器丢弃的 system session 事件添加 debug 日志
-- **改进**: `_execute_subgraph` 增加了 max_iterations 保护
-- **改进**: 节点不存在时现在发出 error 事件而非静默失败
-- **改进**: 感知事件处理器现在先注册再启动调度器（修复竞态条件）
-- **改进**: `Graph.add_interrupt()` 现在自动创建到 resume_node/cancel_node 的边
-
-### v0.1.9
-- **Bug 修复**: 修复同步生成器状态丢失问题（同步生成器现在保持状态，不会每次循环重新初始化）
-- **Bug 修复**: 修复异常被静默忽略问题（异常现在会被正确记录到日志）
-- **Bug 修复**: 修复事件类型硬编码过滤问题（所有事件类型现在都能正确路由）
-- **改进**: 感知事件现在会自动创建不存在的会话
-
-### v0.1.3
-- **Bug 修复**: 修复了 agent 返回无输出事件时 `stream_events` 超时的问题
-- **改进**: 增强引擎调试日志，提升可观测性
-- **改进**: Graph 类新增 `_has_conditional_edges()` 辅助方法
-- **测试**: 新增 ReAct 循环和节点执行保护的综合测试套件
-
-### v0.1.2
-- 初始版本
+### v0.2.0
+- **重大更新**：新增 VLA 双循环架构 — `@app.vla`（高频推理，time-driven）、`@app.vla_action`（动作通道路由）、`@app.signal`（零拷贝信号通道，与 Event 平行）
+- **重大更新**：Session 双循环 — VLA 快循环与 LLM 慢循环并发运行，通过 State（黑板模式）通信，支持 N:M 动作通道映射
+- **新功能**：`FastMindAPI.read_signal()` / `write_signal()` / `list_signals()` / `pause_vla()` / `resume_vla()`
+- **Bug 修复**：修复 `_save_checkpoint` 在 state 含不可序列化对象时崩溃（改用 `_safe_deepcopy` 优雅回退）
+- **Bug 修复**：修复 `human_in_loop` checkpoint pickle 错误
+- **Bug 修复**：修复 VLA action executor 异常隔离（一个 executor 崩溃不再阻塞同 tick 的其他 action）
+- **可靠性**：新增 20 项 VLA 压力/可靠性测试（长时间运行、异常恢复、并发访问、多会话、暂停/恢复周期、override 周期）
 
 ## 许可证
 
-GPL-3.0 许可证 - 详见 [LICENSE](LICENSE)。
-
-## 致谢
-
-状态图架构设计灵感来源于 [LangGraph](https://github.com/langchain-ai/langgraph)。
+GPL-3.0 许可证 — 详见 [LICENSE](LICENSE)。
 
 ## 作者
 
-[xiefujin](https://github.com/kandada)  email:490021684@qq.com
-
-## 链接
-
-- [文档](https://fastmind.ai/docs)
-- [GitHub](https://github.com/kandada/fastmind)
-- [PyPI](https://pypi.org/project/fastmind/)
+[xiefujin](https://github.com/kandada) email:490021684@qq.com

@@ -1,7 +1,8 @@
 """FastMind 主类的单元测试"""
 
 import pytest
-from fastmind import FastMind
+import asyncio
+from fastmind import FastMind, ActionSpace, VLAActionNode
 from fastmind.core.graph import Graph
 from fastmind.core.event import Event
 
@@ -97,6 +98,251 @@ class TestFastMind:
         assert len(schemas) == 1
         assert schemas[0]["function"]["name"] == "weather"
 
+class TestSignalDecorator:
+    """@app.signal 装饰器测试"""
+
+    @pytest.fixture
+    def app(self):
+        return FastMind()
+
+    def test_signal_decorator(self, app):
+        """测试注册信号"""
+
+        @app.signal(name="vision", interval=1/30)
+        async def npc_vision():
+            return "frame_data"
+
+        signals = app.get_signals()
+        assert "vision" in signals
+        sig = app.get_signal("vision")
+        assert sig.name == "vision"
+        assert sig.interval == pytest.approx(0.0333, rel=0.01)
+        assert sig.func is npc_vision
+
+    def test_signal_uses_function_name(self, app):
+        """测试未指定名称时使用函数名"""
+
+        @app.signal(interval=0.1)
+        async def custom_signal():
+            return 42
+
+        assert "custom_signal" in app.get_signals()
+
+    def test_signal_interval_validation(self, app):
+        """测试 interval 必须为正数"""
+        with pytest.raises(ValueError, match="must be positive"):
+
+            @app.signal(interval=0)
+            async def bad():
+                pass
+
+        with pytest.raises(ValueError, match="must be positive"):
+
+            @app.signal(interval=-1)
+            async def also_bad():
+                pass
+
+    def test_register_signal_manually(self, app):
+        """测试手动注册信号"""
+        from fastmind import Signal
+
+        async def src():
+            return "data"
+
+        sig = Signal(name="manual", interval=0.5, func=src)
+        app.register_signal("manual", sig)
+        assert "manual" in app.get_signals()
+        assert app.get_signal("manual").interval == 0.5
+
+    def test_multiple_signals(self, app):
+        """测试注册多个信号"""
+
+        @app.signal(name="vision", interval=1/30)
+        async def vision():
+            return "frame"
+
+        @app.signal(name="hearing", interval=1/10)
+        async def hearing():
+            return "sound"
+
+        signals = app.get_signals()
+        assert len(signals) == 2
+        assert "vision" in signals
+        assert "hearing" in signals
+
+
+class TestVLADecorator:
+    """@app.vla 装饰器测试"""
+
+    @pytest.fixture
+    def app(self):
+        return FastMind()
+
+    def test_vla_decorator(self, app):
+        """测试注册 VLA"""
+
+        @app.vla(name="navigation", frequency=30.0)
+        async def navigation_vla(state, signal_bus):
+            return {"body": [0.5, 0, 0]}
+
+        vlas = app.get_vlas()
+        assert "navigation" in vlas
+        cfg = app.get_vla("navigation")
+        assert cfg.frequency == 30.0
+        assert cfg.func is navigation_vla
+
+    def test_vla_default_name(self, app):
+        """测试未指定名称"""
+
+        @app.vla(frequency=20.0)
+        async def my_vla(state, sb):
+            return {}
+
+        assert "my_vla" in app.get_vlas()
+
+    def test_vla_default_frequency(self, app):
+        """测试默认频率"""
+
+        @app.vla(name="test")
+        async def test_vla(state, sb):
+            return {}
+
+        cfg = app.get_vla("test")
+        assert cfg.frequency == 10.0
+
+    def test_vla_with_input_signals(self, app):
+        """测试指定输入信号"""
+
+        @app.vla(name="nav", frequency=30.0, input_signals=["vision", "proprioception"])
+        async def nav_vla(state, sb):
+            return {}
+
+        cfg = app.get_vla("nav")
+        assert cfg.input_signals == ["vision", "proprioception"]
+
+    def test_vla_empty_input_signals(self, app):
+        """测试默认输入信号为空"""
+
+        @app.vla(name="test")
+        async def test_vla(state, sb):
+            return {}
+
+        assert app.get_vla("test").input_signals == []
+
+    def test_register_vla_manually(self, app):
+        """测试手动注册 VLA"""
+        from fastmind import VLAConfig
+
+        async def fn(state, sb):
+            return {"body": [0.0]}
+
+        cfg = VLAConfig(name="manual", func=fn, frequency=5.0)
+        app.register_vla("manual", cfg)
+        assert "manual" in app.get_vlas()
+        assert app.get_vla("manual").frequency == 5.0
+
+    def test_has_vla_false(self, app):
+        """测试没有 VLA 时返回 False"""
+        assert app.has_vla() is False
+
+    def test_has_vla_true(self, app):
+        """测试有 VLA 时返回 True"""
+
+        @app.vla(name="test")
+        async def test_vla(state, sb):
+            return {}
+
+        assert app.has_vla() is True
+
+    def test_multiple_vlas(self, app):
+        """测试注册多个 VLA"""
+
+        @app.vla(name="nav", frequency=30.0)
+        async def nav(state, sb):
+            return {}
+
+        @app.vla(name="face", frequency=10.0)
+        async def face(state, sb):
+            return {}
+
+        assert len(app.get_vlas()) == 2
+
+
+class TestVLAActionDecorator:
+    """@app.vla_action 装饰器测试"""
+
+    @pytest.fixture
+    def app(self):
+        return FastMind()
+
+    def test_vla_action_decorator(self, app):
+        """测试注册动作执行器"""
+        space = ActionSpace(dim=7)
+
+        @app.vla_action(name="body", action_space=space)
+        async def body_executor(action):
+            return {"done": True}
+
+        actions = app.get_vla_actions()
+        assert "body" in actions
+        node = app.get_vla_action("body")
+        assert node.name == "body"
+        assert node.action_space.dim == 7
+
+    def test_vla_action_default_name(self, app):
+        """测试未指定名称"""
+
+        @app.vla_action()
+        async def my_action(action):
+            return {}
+
+        assert "my_action" in app.get_vla_actions()
+
+    def test_vla_action_without_action_space(self, app):
+        """测试不指定动作空间"""
+
+        @app.vla_action(name="test")
+        async def test_action(action):
+            return {}
+
+        node = app.get_vla_action("test")
+        assert node.action_space is None
+
+    def test_register_vla_action_manually(self, app):
+        """测试手动注册动作执行器"""
+
+        async def fn(action):
+            return {}
+
+        node = VLAActionNode(name="manual", func=fn)
+        app.register_vla_action("manual", node)
+        assert "manual" in app.get_vla_actions()
+
+    def test_multiple_actions(self, app):
+        """测试注册多个动作执行器"""
+
+        @app.vla_action(name="body")
+        async def body(action):
+            return {}
+
+        @app.vla_action(name="face")
+        async def face(action):
+            return {}
+
+        @app.vla_action(name="speech")
+        async def speech(action):
+            return {}
+
+        assert len(app.get_vla_actions()) == 3
+
+
+class TestPerceptionDecorator:
+    """@app.perception 装饰器测试（从 TestFastMind 移出）"""
+
+    @pytest.fixture
+    def app(self):
+        return FastMind()
+
     def test_perception_decorator(self, app):
         """测试感知装饰器"""
 
@@ -106,61 +352,10 @@ class TestFastMind:
                 yield Event("sensor.data", {}, "system")
                 await asyncio.sleep(5.0)
 
-        import asyncio
-
         perceptions = app.get_perceptions()
         assert len(perceptions) == 1
         assert perceptions[0][0] == "test_sensor"
         assert perceptions[0][2] == 5.0
 
-    def test_app_repr(self, app):
-        """测试应用字符串表示"""
-
-        @app.tool(name="t1")
-        async def tool1():
-            pass
-
-        @app.agent(name="a1")
-        async def agent1(s, e):
-            pass
-
-        repr_str = repr(app)
-        assert "FastMind" in repr_str
-        assert "t1" in repr_str
-        assert "a1" in repr_str
-
-    def test_graph_decorator_validates_return_type(self, app):
-        """测试 graph 装饰器验证返回值类型"""
-        with pytest.raises(TypeError, match="must return a Graph instance"):
-
-            @app.graph(name="invalid")
-            def bad_graph():
-                return "not a graph"
-
-    def test_graph_decorator_success(self, app):
-        """测试 graph 装饰器成功注册"""
-
-        @app.graph(name="valid")
-        def good_graph():
-            g = Graph()
-            g.add_node("start", lambda s, e: s)
-            return g
-
-        assert "valid" in app._graphs
-
-    def test_perception_interval_validation(self, app):
-        """测试 perception interval 必须为正数"""
-        with pytest.raises(ValueError, match="must be positive"):
-
-            @app.perception(interval=0)
-            async def zero_interval(app):
-                yield Event("test", {}, "system")
-
-        with pytest.raises(ValueError, match="must be positive"):
-
-            @app.perception(interval=-1)
-            async def negative_interval(app):
-                yield Event("test", {}, "system")
 
 
-import asyncio

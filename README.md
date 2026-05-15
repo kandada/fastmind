@@ -1,6 +1,6 @@
 # FastMind 🧠
 
-A lightweight, event-driven multi-agent framework for embodied AI systems.
+A lightweight, event-driven framework for building embodied AI agents with dual-loop architecture (LLM + VLA).
 
 [![PyPI version](https://badge.fury.io/py/fastmind.svg)](https://badge.fury.io/py/fastmind)
 [![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
@@ -8,45 +8,26 @@ A lightweight, event-driven multi-agent framework for embodied AI systems.
 
 ## Features
 
-- **FastAPI-like Decorators**: Familiar `@app.agent`, `@app.tool`, `@app.perception` syntax, easy to learn
-- **State Graph Architecture**: Build agent workflows like flowcharts, not nested loops
+- **Dual-Loop Architecture**: LLM slow loop (planning, reasoning) + VLA fast loop (real-time control) run concurrently in one session
+- **Signal & Event**: Two parallel communication primitives — `Event` for discrete messages, `Signal` for continuous high-frequency data
+- **FastAPI-like Decorators**: Familiar `@app.agent`, `@app.tool`, `@app.vla`, `@app.vla_action`, `@app.signal` syntax
+- **State Graph**: Build agent workflows like flowcharts with nodes, edges, and conditional routing
 - **Event-Driven**: Asyncio-based, zero polling, high-performance async execution
-- **Built-in Streaming**: Real-time streaming output with backpressure control
 - **Human-in-the-Loop**: Interrupt and resume sessions for human approval
 - **Perception Loops**: Native support for sensors, timers, and external triggers
-- **Tool Calling**: ReAct-style agent-tool-agent loops
-- **Session Isolation**: Multi-user support with isolated session state
-- **Lightweight**: ~8000 lines, no big dependencies
+- **Action Channel Routing**: VLA outputs map to multiple action executors via channel names (N:M)
+- **Session Isolation**: Multi-user support with isolated state per session
+- **Lightweight**: ~8000 lines core, no big dependencies
 
 ## Installation
-
-### From PyPI (Recommended)
 
 ```bash
 pip install fastmind
 ```
 
-### From GitHub
-
-```bash
-pip install git+https://github.com/kandada/fastmind.git
-```
-
-With examples:
-
-```bash
-pip install git+https://github.com/kandada/fastmind.git#egg=fastmind[examples]
-```
-
-For development:
-
-```bash
-git clone https://github.com/kandada/fastmind.git
-cd fastmind
-pip install -e ".[all]"
-```
-
 ## Quick Start
+
+### LLM Agent
 
 ```python
 from fastmind import FastMind, Graph, Event
@@ -58,7 +39,6 @@ app = FastMind()
 async def chat_agent(state: dict, event: Event) -> dict:
     state.setdefault("messages", [])
     state["messages"].append({"role": "user", "content": event.payload.get("text", "")})
-    # Your LLM call here
     state["messages"].append({"role": "assistant", "content": "Hello!"})
     return state
 
@@ -77,182 +57,132 @@ import asyncio
 asyncio.run(main())
 ```
 
-## Core Concepts
-
-### State
-
-A dict-like container for session data shared across nodes:
+### LLM Agent with Tool Calling (ReAct)
 
 ```python
-state["messages"].append({"role": "user", "content": "Hello"})
-```
+from fastmind import FastMind, Graph, Event, ToolNode, Tool
+from fastmind.contrib import FastMindAPI
 
-### Node
+app = FastMind()
 
-An async function that processes events and returns updated state:
-
-```python
-async def my_node(state: dict, event: Event) -> dict:
-    state["processed"] = True
-    return state
-```
-
-### Graph
-
-A collection of nodes and edges defining your workflow:
-
-```python
-graph = Graph()
-graph.add_node("agent", chat_agent)
-graph.add_edge("agent", "tool_node")
-graph.set_entry_point("agent")
-```
-
-### Event
-
-External or internal triggers that drive graph execution:
-
-```python
-event = Event(type="user.message", payload={"text": "Hello"}, session_id="user_001")
-```
-
-## Streaming Output
-
-Real-time streaming with zero polling:
-
-```python
-@app.agent(name="chat_agent")
-async def chat_agent(state: dict, event: Event) -> dict:
-    output_queue = state["_output_queue"]
-    session_id = state["_session_id"]
-    
-    async def stream_llm():
-        for chunk in llm_stream():
-            for char in chunk:
-                output_queue.put_nowait(Event(
-                    type="stream.chunk",
-                    payload={"delta": char},
-                    session_id=session_id
-                ))
-                await asyncio.sleep(0.03)
-        output_queue.put_nowait(Event(type="stream.end", payload={}, session_id=session_id))
-    
-    asyncio.create_task(stream_llm())
-    return state
-```
-
-## Human-in-the-Loop
-
-Interrupt and resume for human approval:
-
-```python
-@app.agent(name="order_agent")
-async def order_agent(state: dict, event: Event) -> dict:
-    state.setdefault("orders", [])
-    amount = event.payload.get("amount", 0)
-    state["orders"].append({"amount": amount, "status": "pending"})
-    if amount > 1000:
-        state["need_approval"] = True
-    return state
-
-async def approve_node(state: dict, event: Event) -> tuple[dict, list[Event]]:
-    return state, [Event(
-        type="interrupt",
-        payload={"prompt": "Approve this transaction?", "resume_node": "confirm"},
-        session_id=event.session_id
-    )]
-
-async def confirm_node(state: dict, event: Event) -> dict:
-    if state.get("orders"):
-        state["orders"][-1]["status"] = "confirmed"
-    return state
-
-async def reject_node(state: dict, event: Event) -> dict:
-    if state.get("orders"):
-        state["orders"][-1]["status"] = "rejected"
-    return state
-
-graph = Graph()
-graph.add_node("order", order_agent)
-graph.add_node("approve", approve_node)
-graph.add_node("confirm", confirm_node)
-graph.add_node("reject", reject_node)
-
-graph.add_edge("order", "approve", condition=lambda s: s.get("need_approval"))
-graph.add_edge("approve", "confirm")
-graph.add_edge("approve", "reject")
-graph.set_entry_point("order")
-
-app.register_graph("main", graph)
-```
-
-Handle the interrupt in your application:
-
-```python
-async def main():
-    api = FastMindAPI(app)
-    await api.start()
-    
-    event = Event("user.message", {"amount": 2000}, "user_001")
-    await api.push_event("user_001", event)
-    
-    async for ev in api.stream_events("user_001"):
-        if ev.type == "interrupt":
-            print(f"Interrupt: {ev.payload['prompt']}")
-            await api.resume_session("user_001", "confirm")  # or "reject"
-```
-
-## Perception Loop
-
-React to sensors, timers, and external events:
-
-```python
-@app.perception(interval=5.0, name="sensor_monitor")
-async def sensor_monitor(app: FastMind):
-    while True:
-        data = await read_sensor()
-        yield Event(type="sensor.data", payload=data, session_id="system")
-        await asyncio.sleep(5.0)
-```
-
-## Tool Calling (ReAct)
-
-```python
-@app.tool(name="get_weather", description="Get weather")
+@app.tool(name="get_weather", description="Get weather for a city")
 async def get_weather(city: str) -> str:
-    return f"{city} is sunny"
+    return f"{city} is sunny, 20°C"
 
-from fastmind import ToolNode
+async def chat_agent(state: dict, event: Event) -> dict:
+    state.setdefault("messages", [])
+    state["messages"].append({"role": "user", "content": event.payload.get("text", "")})
+    # Simulate LLM deciding to call a tool
+    if "weather" in event.payload.get("text", "").lower():
+        state["tool_calls"] = [
+            {"id": "call_1", "function": {"name": "get_weather", "arguments": '{"city": "Beijing"}'}}
+        ]
+    else:
+        state["messages"].append({"role": "assistant", "content": "I can check weather for you!"})
+    return state
 
-tool_node = ToolNode(app.get_tools())                      # all tools
-# tool_node = ToolNode(app.get_tools(tools=["get_weather"])) # specific tools only
+tool_node = ToolNode(app.get_tools())
 
 def has_tool_calls(state: dict, event: Event) -> str:
     return "tools" if state.get("tool_calls") else None
 
-graph.add_conditional_edges("agent", has_tool_calls, {None: "__end__"})
+graph = Graph()
+graph.add_node("agent", chat_agent)
+graph.add_node("tools", tool_node)
+graph.add_conditional_edges("agent", has_tool_calls, {"tools": "tools", None: "__end__"})
 graph.add_edge("tools", "agent")
+graph.set_entry_point("agent")
+app.register_graph("main", graph)
+```
+
+### VLA Agent (NPC Control)
+
+```python
+from fastmind import FastMind, Graph, Event, ActionSpace
+from fastmind.contrib import FastMindAPI
+
+app = FastMind()
+
+# High-frequency sensor signal (30fps, zero-copy)
+@app.signal(name="vision", interval=1/30)
+async def npc_vision():
+    return {"frame_id": 1, "objects": []}
+
+# VLA fast loop (30Hz, time-driven, bypasses graph)
+@app.vla(name="navigation", frequency=30.0)
+async def navigation_vla(state, signal_bus):
+    vision = signal_bus.read("vision")
+    goal = state.get("llm", {}).get("goal", "idle")
+    action = [0.5, 0.0, 0.0]  # mock: move forward
+    return {"body": action}
+
+# Action executor receives routed action vector
+@app.vla_action(name="body", action_space=ActionSpace(3))
+async def body_executor(action):
+    await game_engine.move(action[0], action[1], action[2])
+
+# LLM slow loop (event-driven)
+@app.agent(name="npc_brain")
+async def npc_brain(state, event):
+    if event.type == "user.message":
+        state.setdefault("llm", {})["goal"] = "go_to_castle"
+    return state
+
+graph = Graph()
+graph.add_node("brain", npc_brain)
+graph.set_entry_point("brain")
+app.register_graph("main", graph)
+```
+
+## Core Concepts
+
+| Concept | Description |
+|---------|-------------|
+| **State** | Per-session dict shared across all loops |
+| **Event** | Discrete messages (user input, LLM response) — queued, push-based |
+| **Signal** | Continuous data (camera frames, joint angles) — last-value cache, pull-based |
+| **Graph** | LLM workflow topology (nodes + edges) |
+| **@app.agent** | LLM reasoning node, event-driven |
+| **@app.vla** | VLA inference node, time-driven, runs on its own scheduler |
+| **@app.vla_action** | Action executor, receives VLA output via channel name |
+| **@app.signal** | High-frequency sensor source, writes to SignalBus |
+| **@app.perception** | Low-frequency sensor source, yields Events (existing) |
+| **Action Channel** | Named bus that routes VLA output to executors (N:M mapping) |
+
+## Architecture
+
+```
+Session
+├── SignalBus                     ← high-frequency data (zero-copy)
+├── LLM Task (_run)               ← slow loop, event-driven
+│   └── Graph: Agent → Tool → ...
+├── VLA Task (_vla_scheduler)     ← fast loop, time-driven
+│   ├── @app.vla inference
+│   ├── Action Channel routing
+│   └── @app.vla_action execution
+└── State (Blackboard)
+    ├── llm/: goal, plan, messages
+    └── vla/: actions, status, memory
 ```
 
 ## Examples
 
 | Example | Description |
 |---------|-------------|
-| [simple_chat.py](examples/simple_chat.py) | Basic chat agent |
-| [simple_chat_with_tool.py](examples/simple_chat_with_tool.py) | Agent with tool calling (ReAct) |
-| [streaming_chat.py](examples/streaming_chat.py) | Real-time streaming output |
+| [simple_chat.py](examples/simple_chat.py) | Basic chat |
+| [simple_chat_with_tool.py](examples/simple_chat_with_tool.py) | Tool calling (ReAct) |
+| [streaming_chat.py](examples/streaming_chat.py) | Real-time streaming |
 | [human_in_loop.py](examples/human_in_loop.py) | Human approval workflow |
-| [perception_loop.py](examples/perception_loop.py) | Sensor data processing |
+| [perception_loop.py](examples/perception_loop.py) | Sensor processing |
 | [drone.py](examples/drone.py) | Timer-based perception |
 | [companion_bot.py](examples/companion_bot.py) | Multi-agent conversation |
-| [humanoid_robot.py](examples/humanoid_robot.py) | Multi-tool collaboration |
+| [humanoid_robot.py](examples/humanoid_robot.py) | Multi-tool robot control |
 | [sleep_assessment.py](examples/sleep_assessment.py) | Multi-state HITL flow |
 | [comprehensive_assistant.py](examples/comprehensive_assistant.py) | Full-featured assistant |
-
-Run an example:
+| [npc_vla.py](examples/npc_vla.py) | **VLA dual-loop NPC (new)** |
 
 ```bash
-python -m fastmind.examples.simple_chat
+python -m fastmind.examples.npc_vla
 ```
 
 ## API Reference
@@ -262,96 +192,35 @@ python -m fastmind.examples.simple_chat
 ```python
 api = FastMindAPI(app)
 
-await api.start()                    # Start engine and perception loops
-await api.push_event(session_id, event)  # Push event to session
-async for ev in api.stream_events(session_id):  # Stream output events
-    print(ev)
-await api.stop()                     # Stop engine
-```
+await api.start()
+await api.push_event(session_id, event)
+async for ev in api.stream_events(session_id): ...
 
-### Session
+# New VLA/Signal API methods:
+frame = api.read_signal(session_id, "vision")      # read signal
+api.write_signal(session_id, "gps", data)           # write signal
+signals = api.list_signals(session_id)              # list signals
+api.pause_vla(session_id)                            # pause VLA loop
+api.resume_vla(session_id)                           # resume VLA loop
 
-```python
-session = api.get_session(session_id)
-state = session.state                 # Get session state
-await session.wait_for_output(timeout=5.0)  # Wait for output event
-```
-
-## Architecture
-
-```
-┌─────────────────────────────────────────────────────────┐
-│                      FastMindAPI                         │
-│  ┌─────────────────┐    ┌────────────────────────────┐  │
-│  │ PerceptionLoop   │───▶│        Engine              │  │
-│  │ Scheduler       │    │  ┌──────────────────────┐  │  │
-│  └─────────────────┘    │  │ Session (per user)   │  │  │
-│                         │  │  ├─ State           │  │  │
-│                         │  │  ├─ Event Queue     │  │  │
-│                         │  │  └─ Output Queue    │  │  │
-│                         │  └──────────────────────┘  │  │
-│                         └────────────────────────────┘  │
-└─────────────────────────────────────────────────────────┘
-```
-
-## Testing
-
-```bash
-pip install fastmind[dev]
-pytest tests/ -v
+await api.stop()
 ```
 
 ## Changelog
 
-### v0.1.10
-- **New Feature**: `app.get_tools(tools=None)` and `app.get_tool_schemas(tools=None)` now support filtering by tool name
-- **Bug Fix**: Fixed synchronous generator exhaustion deadlock in PerceptionLoop (generator now recreates instead of idle)
-- **Bug Fix**: Fixed HITL interrupt resume re-executing interrupt node (now correctly routes to resume_node/cancel_node)
-- **Bug Fix**: Fixed `_execute_subgraph` not handling interrupt events (subgraph interrupts now properly interrupt session)
-- **Bug Fix**: Fixed `detect_cycles()` not traversing conditional edges (cycles via condition edges are now detected)
-- **Bug Fix**: Fixed `get_next_node()` not falling back to regular edges when conditional edges don't match
-- **Bug Fix**: Fixed `_merge_state` losing State type methods
-- **Bug Fix**: Fixed `engine.stop()` dead task cleanup loop (was always empty)
-- **Bug Fix**: Fixed perception event handler exception causing entire iteration to stop
-- **Bug Fix**: Fixed `add_message_if_new` not comparing extra fields
-- **Bug Fix**: Moved `import json` from inside ToolNode loops to module top level
-- **Improvement**: Added `ToolRegistry.add()` / `AgentRegistry.add()` public methods
-- **Improvement**: `register_tool()` / `register_agent()` now use public API instead of private dict access
-- **Improvement**: Added debug log for system session events discarded by perception handler
-- **Improvement**: `_execute_subgraph` now has max_iterations protection
-- **Improvement**: Node not found now emits error event instead of silent failure
-- **Improvement**: Perception event handler registered before scheduler starts (was race condition)
-- **Improvement**: Added `Graph.add_interrupt()` now creates edges to resume_node/cancel_node
-
-### v0.1.9
-- **Bug Fix**: Fixed sync generator state preservation in PerceptionLoop (sync generators now maintain state across loops instead of restarting)
-- **Bug Fix**: Fixed silent exception swallowing in perception handlers (exceptions are now properly logged)
-- **Bug Fix**: Fixed hardcoded `sensor.data` event type filtering (all event types are now routed correctly)
-- **Improvement**: Perception events auto-create sessions if they don't exist
-
-### v0.1.3
-- **Bug Fix**: Fixed `stream_events` timeout issue when agent returns no output events
-- **Improvement**: Enhanced debug logging in engine for better observability
-- **Improvement**: Added `_has_conditional_edges()` helper method to Graph class
-- **Tests**: Added comprehensive test suite for ReAct loops and node execution protection
-
-### v0.1.2
-- Initial release
+### v0.2.0
+- **Major**: New VLA dual-loop architecture — `@app.vla` for high-frequency inference (time-driven), `@app.vla_action` for action execution via channel routing, `@app.signal` for zero-copy sensor data (parallel to Event)
+- **Major**: Dual-loop Session — VLA fast loop runs concurrently with LLM slow loop, communicates via shared State (Blackboard pattern), N:M action channel mapping
+- **New Feature**: `FastMindAPI.read_signal()` / `write_signal()` / `list_signals()` / `pause_vla()` / `resume_vla()`
+- **Bug Fix**: Fixed `_save_checkpoint` crash on unpicklable state objects (now uses `_safe_deepcopy` with graceful fallback)
+- **Bug Fix**: Fixed `human_in_loop` checkpoint pickle error
+- **Bug Fix**: Fixed VLA action executor error isolation (one executor crash no longer blocks other actions in same tick)
+- **Reliability**: Added 20 VLA stress/reliability tests (long-running, error recovery, concurrent access, multi-session, pause/resume cycles, override cycles)
 
 ## License
 
-GPL-3.0 License - see [LICENSE](LICENSE) for details.
-
-## Acknowledgments
-
-Inspired by [LangGraph](https://github.com/langchain-ai/langgraph) for the state graph architecture design.
+GPL-3.0 License — see [LICENSE](LICENSE) for details.
 
 ## Author
 
-[xiefujin](https://github.com/kandada)  email:490021684@qq.com
-
-## Links
-
-- [Documentation](https://fastmind.ai/docs)
-- [GitHub](https://github.com/kandada/fastmind)
-- [PyPI](https://pypi.org/project/fastmind/)
+[xiefujin](https://github.com/kandada) email:490021684@qq.com
