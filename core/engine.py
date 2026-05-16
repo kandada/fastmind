@@ -16,54 +16,108 @@ from ..utils.logging import get_logger
 logger = get_logger("fastmind.engine")
 
 
-class NotifyingQueue:
-    """包装 asyncio.Queue，在 put 时自动触发 asyncio.Event"""
+class EventBuffer:
+    """只追加环形缓冲区，游标读取，不消费
 
-    def __init__(self, queue: asyncio.Queue, event: asyncio.Event):
-        self._queue = queue
+    多个消费者可独立通过游标读取全部事件，互不干扰。
+    替代 asyncio.Queue 解决"一个事件只能被一个消费者取走"的问题。
+    """
+
+    def __init__(self, maxlen: int = 5000):
+        self._events: deque = deque()
+        self._maxlen = maxlen
+        self._notifier = asyncio.Event()
+        self._base = 0
+
+    def append(self, event) -> int:
+        """追加事件，返回其逻辑索引"""
+        self._events.append(event)
+        if len(self._events) > self._maxlen:
+            self._events.popleft()
+            self._base += 1
+        self._notifier.set()
+        return self._base + len(self._events) - 1
+
+    def read(self, cursor: int) -> list:
+        """返回 cursor 之后的所有事件（不消费）"""
+        if cursor < self._base:
+            cursor = self._base
+        idx = cursor - self._base
+        if idx >= len(self._events):
+            return []
+        return list(self._events)[idx:]
+
+    async def wait(self, cursor: int, timeout: float = None) -> list:
+        """阻塞直到有 cursor 之后的新事件"""
+        if cursor < self._base:
+            cursor = self._base
+        if cursor < self._base + len(self._events):
+            return self._events[cursor - self._base:]
+
+        self._notifier.clear()
+        if cursor < self._base + len(self._events):
+            return self._events[cursor - self._base:]
+
+        try:
+            await asyncio.wait_for(self._notifier.wait(), timeout=timeout)
+        except asyncio.TimeoutError:
+            pass
+
+        if cursor < self._base:
+            cursor = self._base
+        if cursor < self._base + len(self._events):
+            return list(self._events)[cursor - self._base:]
+        return []
+
+    @property
+    def tail_cursor(self) -> int:
+        return self._base + len(self._events)
+
+
+class NotifyingQueue:
+    """向后兼容包装：对外暴露 queue 接口，内部用 EventBuffer
+
+    保留 .put() / .get() / .empty() 等传统 Queue 接口，
+    默认消费者使用内部游标，其他消费者可直接读 EventBuffer。
+    """
+
+    def __init__(self, buffer: EventBuffer, event: asyncio.Event):
+        self._buffer = buffer
         self._event = event
+        self._cursor = 0
 
     async def put(self, item):
-        await self._queue.put(item)
+        self._buffer.append(item)
         self._event.set()
 
     def put_nowait(self, item):
-        self._queue.put_nowait(item)
+        self._buffer.append(item)
         self._event.set()
 
     async def get(self):
-        item = await self._queue.get()
-        if not self._queue.empty():
-            self._event.set()
-        return item
+        while True:
+            events = self._buffer.read(self._cursor)
+            if events:
+                self._cursor += len(events)
+                return events[0]
+            self._event.clear()
+            await self._event.wait()
 
     def get_nowait(self):
-        item = self._queue.get_nowait()
-        if not self._queue.empty():
-            self._event.set()
-        return item
+        events = self._buffer.read(self._cursor)
+        if not events:
+            raise asyncio.QueueEmpty()
+        self._cursor += len(events)
+        return events[0]
 
     def empty(self):
-        return self._queue.empty()
+        return self._cursor >= self._buffer.tail_cursor
 
     def qsize(self):
-        return self._queue.qsize()
+        return self._buffer.tail_cursor - self._cursor
 
     def full(self):
-        return self._queue.full()
-
-    def task_done(self):
-        return self._queue.task_done()
-
-    async def join(self):
-        await self._queue.join()
-
-    @property
-    def _unfinished_tasks(self):
-        return self._queue.unfinished_tasks
-
-    def __aiter__(self):
-        return self._queue.__aiter__()
+        return False
 
 
 class Session:
@@ -103,8 +157,9 @@ class Session:
         self.app = app
         self.state: dict = State()
         self.input_queue: asyncio.Queue[Event] = asyncio.Queue()
+        self._event_buffer: EventBuffer = EventBuffer(maxlen=5000)
         self._output_event: asyncio.Event = asyncio.Event()
-        self.output_queue = NotifyingQueue(asyncio.Queue(), self._output_event)
+        self.output_queue = NotifyingQueue(self._event_buffer, self._output_event)
         self._task: Optional[asyncio.Task] = None
         self._state = self.STATE_CREATED
         self._checkpoint: Optional[dict] = None
@@ -542,21 +597,14 @@ class Session:
             ]
 
     def _merge_state(self, new_state: dict) -> None:
-        """合并新 state，保留特殊字段
+        """合并新 state，仅更新节点返回的 key，不替换整个 dict
 
-        如果节点返回新 state，需要保留 _output_queue, _session_id 等特殊字段。
+        防止节点返回部分 state 时意外丢弃其他 key。
         """
         if not isinstance(new_state, dict):
             return
 
-        reserved_keys = {"_output_queue", "_session_id"}
-        for key in reserved_keys:
-            if key in self.state and key not in new_state:
-                new_state[key] = self.state[key]
-
-        if not isinstance(new_state, State):
-            new_state = State(new_state)
-        self.state = new_state
+        self.state.update(new_state)
 
     def _safe_deepcopy(self, obj: Any, max_depth: int = 10) -> Any:
         """安全的 deepcopy，遇到不可序列化对象时转为字符串

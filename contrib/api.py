@@ -122,9 +122,9 @@ class FastMindAPI:
         session_id: str,
         event_types: Optional[list[str]] = None,
     ) -> AsyncIterator[Event]:
-        """流式获取会话事件（无轮询）
+        """流式获取会话事件（支持多消费者）
 
-        使用 asyncio.Queue.get() 阻塞等待，零CPU浪费。
+        每个调用者持有独立游标，互不干扰，零CPU浪费。
 
         Args:
             session_id: 会话 ID
@@ -150,15 +150,18 @@ class FastMindAPI:
         if not session.is_alive:
             raise RuntimeError(f"Session '{session_id}' is stopped")
 
+        cursor = 0
         while self._running and session.is_alive:
             try:
-                event = await session.wait_for_output(timeout=1.0)
-                if event is None:
+                events = await session._event_buffer.wait(cursor, timeout=1.0)
+                if not events:
                     continue
-                if event_types is None or event.type in event_types:
-                    yield event
-                if event.type in ("stream.end", "error", "interrupt"):
-                    break
+                cursor += len(events)
+                for event in events:
+                    if event_types is None or event.type in event_types:
+                        yield event
+                    if event.type in ("stream.end", "error", "interrupt"):
+                        return
             except asyncio.TimeoutError:
                 continue
             except asyncio.CancelledError:

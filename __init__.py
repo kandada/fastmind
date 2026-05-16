@@ -1,6 +1,6 @@
 """FastMind - 具身智能多Agent系统框架"""
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 
 from .core.app import FastMind
 from .core.graph import Graph

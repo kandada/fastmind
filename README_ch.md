@@ -202,6 +202,10 @@ await api.stop()
 
 ## 更新日志
 
+### v0.2.1
+- **重构**：`_merge_state` 从全量替换改为 `update`，防止节点返回部分 state 时丢失未涉及的 key
+- **重构**：输出队列从 `asyncio.Queue` 替换为 `EventBuffer`（只追加环形缓冲区 + 游标读取），`stream_events` 支持多消费者并行独立消费
+
 ### v0.2.0
 - **重大更新**：新增 VLA 双循环架构 — `@app.vla`（高频推理，time-driven）、`@app.vla_action`（动作通道路由）、`@app.signal`（零拷贝信号通道，与 Event 平行）
 - **重大更新**：Session 双循环 — VLA 快循环与 LLM 慢循环并发运行，通过 State（黑板模式）通信，支持 N:M 动作通道映射

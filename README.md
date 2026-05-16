@@ -208,6 +208,10 @@ await api.stop()
 
 ## Changelog
 
+### v0.2.1
+- **Refactor**: `_merge_state` 从全量替换改为 `update`，防止节点返回部分 state 时丢失未涉及的 key
+- **Refactor**: 输出队列从 `asyncio.Queue` 替换为 `EventBuffer`（只追加环形缓冲区 + 游标读取），`stream_events` 支持多消费者并行独立消费
+
 ### v0.2.0
 - **Major**: New VLA dual-loop architecture — `@app.vla` for high-frequency inference (time-driven), `@app.vla_action` for action execution via channel routing, `@app.signal` for zero-copy sensor data (parallel to Event)
 - **Major**: Dual-loop Session — VLA fast loop runs concurrently with LLM slow loop, communicates via shared State (Blackboard pattern), N:M action channel mapping
