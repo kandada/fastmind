@@ -52,11 +52,11 @@ class EventBuffer:
         if cursor < self._base:
             cursor = self._base
         if cursor < self._base + len(self._events):
-            return self._events[cursor - self._base:]
+            return list(self._events)[cursor - self._base:]
 
         self._notifier.clear()
         if cursor < self._base + len(self._events):
-            return self._events[cursor - self._base:]
+            return list(self._events)[cursor - self._base:]
 
         try:
             await asyncio.wait_for(self._notifier.wait(), timeout=timeout)
