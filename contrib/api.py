@@ -150,7 +150,7 @@ class FastMindAPI:
         if not session.is_alive:
             raise RuntimeError(f"Session '{session_id}' is stopped")
 
-        cursor = 0
+        cursor = session._event_buffer.tail_cursor
         while self._running and session.is_alive:
             try:
                 events = await session._event_buffer.wait(cursor, timeout=1.0)
