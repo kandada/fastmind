@@ -96,11 +96,15 @@ class NotifyingQueue:
 
     async def get(self):
         while True:
+            self._event.clear()
             events = self._buffer.read(self._cursor)
             if events:
                 self._cursor += len(events)
                 return events[0]
-            self._event.clear()
+            events = self._buffer.read(self._cursor)
+            if events:
+                self._cursor += len(events)
+                return events[0]
             await self._event.wait()
 
     def get_nowait(self):
@@ -262,10 +266,12 @@ class Session:
 
     async def wait_for_output(self, timeout: Optional[float] = None) -> Optional[Event]:
         """等待输出事件（阻塞直到有输出或超时）"""
-        if not self.output_queue.empty():
-            return self.output_queue.get_nowait()
-
         self._output_event.clear()
+        try:
+            return self.output_queue.get_nowait()
+        except asyncio.QueueEmpty:
+            pass
+
         try:
             if timeout is None:
                 await self._output_event.wait()
