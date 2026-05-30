@@ -227,23 +227,29 @@ class Session:
         if self._task:
             self._task.cancel()
             try:
-                await self._task
-            except asyncio.CancelledError:
+                await asyncio.wait_for(self._task, timeout=5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
             self._task = None
 
         if self._vla_task:
             self._vla_task.cancel()
             try:
-                await self._vla_task
-            except asyncio.CancelledError:
+                await asyncio.wait_for(self._vla_task, timeout=5)
+            except (asyncio.CancelledError, asyncio.TimeoutError):
                 pass
             self._vla_task = None
 
         for task in self._signal_tasks:
             task.cancel()
         if self._signal_tasks:
-            await asyncio.gather(*self._signal_tasks, return_exceptions=True)
+            try:
+                await asyncio.wait_for(
+                    asyncio.gather(*self._signal_tasks, return_exceptions=True),
+                    timeout=5,
+                )
+            except (asyncio.CancelledError, asyncio.TimeoutError):
+                pass
             self._signal_tasks = []
 
     async def push_event(self, event: Event) -> None:
@@ -707,8 +713,12 @@ class Engine:
         """停止引擎"""
         self._running = False
 
-        for session in self._sessions.values():
-            await session.stop()
+        tasks = [
+            asyncio.wait_for(s.stop(), timeout=10)
+            for s in self._sessions.values()
+        ]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
 
     def get_or_create_session(
         self,

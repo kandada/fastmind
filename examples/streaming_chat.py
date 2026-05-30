@@ -131,7 +131,9 @@ async def chat_agent(state: dict, event: Event) -> dict:
                 )
             )
 
-    asyncio.create_task(stream_llm())
+    state.setdefault("_bg_tasks", [])
+    task = asyncio.create_task(stream_llm())
+    state["_bg_tasks"].append(task)
     return state
 
 

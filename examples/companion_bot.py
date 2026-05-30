@@ -219,7 +219,7 @@ async def main():
             event = Event("user.message", {"text": user_input}, session_id)
             await fm_api.push_event(session_id, event)
 
-            await asyncio.sleep(0.3)
+            await asyncio.sleep(0.1)
 
             state = fm_api.get_state(session_id)
             if state and "messages" in state:

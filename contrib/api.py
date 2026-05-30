@@ -165,6 +165,7 @@ class FastMindAPI:
             except asyncio.TimeoutError:
                 continue
             except asyncio.CancelledError:
+                logger.debug(f"stream_events for session {session_id} cancelled")
                 break
 
     def get_state(self, session_id: str) -> Optional[dict]:

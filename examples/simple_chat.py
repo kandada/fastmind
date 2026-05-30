@@ -34,6 +34,9 @@ async def chat_agent(state: dict, event: Event) -> dict:
     if user_text.lower() == "quit":
         state["messages"].append({"role": "assistant", "content": "再见！"})
         state["quit"] = True
+        state["_output_queue"].put_nowait(
+            Event(type="stream.end", payload={}, session_id=event.session_id)
+        )
         return state
 
     api_key = os.getenv("LLM_API_KEY")
@@ -42,6 +45,9 @@ async def chat_agent(state: dict, event: Event) -> dict:
 
     if not api_key:
         state["messages"].append({"role": "assistant", "content": "错误: 未设置 LLM_API_KEY"})
+        state["_output_queue"].put_nowait(
+            Event(type="stream.end", payload={}, session_id=event.session_id)
+        )
         return state
 
     try:
@@ -60,6 +66,9 @@ async def chat_agent(state: dict, event: Event) -> dict:
     except Exception as e:
         state["messages"].append({"role": "assistant", "content": f"错误: {str(e)}"})
 
+    state["_output_queue"].put_nowait(
+        Event(type="stream.end", payload={}, session_id=event.session_id)
+    )
     return state
 
 
@@ -90,7 +99,9 @@ async def main():
             event = Event("user.message", {"text": user_input}, session_id)
             await fm_api.push_event(session_id, event)
 
-            await asyncio.sleep(3)
+            async for ev in fm_api.stream_events(session_id):
+                if ev.type == "stream.end":
+                    break
 
             state = fm_api.get_state(session_id)
             if state and "messages" in state:
