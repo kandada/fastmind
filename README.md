@@ -221,6 +221,22 @@ await api.stop()
 - **Bug Fix**: Fixed VLA action executor error isolation (one executor crash no longer blocks other actions in same tick)
 - **Reliability**: Added 20 VLA stress/reliability tests (long-running, error recovery, concurrent access, multi-session, pause/resume cycles, override cycles)
 
+## Citation
+
+If you use FastMind in your research, please cite:
+
+```bibtex
+@misc{xie2026fastmind,
+  title  = {FastMind: A Framework-Centric Architecture for Dual-Loop Embodied Intelligence},
+  author = {Xie, Fujin},
+  year   = {2026},
+  doi    = {10.6084/m9.figshare.32692677},
+  url    = {https://doi.org/10.6084/m9.figshare.32692677}
+}
+```
+
+> **Preprint**: https://doi.org/10.6084/m9.figshare.32692677
+
 ## License
 
 GPL-3.0 License — see [LICENSE](LICENSE) for details.
