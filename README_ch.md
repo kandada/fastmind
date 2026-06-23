@@ -215,26 +215,7 @@ await api.stop()
 - **Bug 修复**：修复 VLA action executor 异常隔离（一个 executor 崩溃不再阻塞同 tick 的其他 action）
 - **可靠性**：新增 20 项 VLA 压力/可靠性测试（长时间运行、异常恢复、并发访问、多会话、暂停/恢复周期、override 周期）
 
-## 引用
-
-如果使用 FastMind 进行研究，请引用：
-
-```bibtex
-@misc{xie2026fastmind,
-  title  = {FastMind: A Framework-Centric Architecture for Dual-Loop Embodied Intelligence},
-  author = {Xie, Fujin},
-  year   = {2026},
-  doi    = {10.6084/m9.figshare.32692677},
-  url    = {https://doi.org/10.6084/m9.figshare.32692677}
-}
-```
-
-> **预印本**: https://doi.org/10.6084/m9.figshare.32692677
 
 ## 许可证
 
 GPL-3.0 许可证 — 详见 [LICENSE](LICENSE)。
-
-## 作者
-
-[xiefujin](https://github.com/kandada) email:490021684@qq.com
