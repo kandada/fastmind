@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# Copyright (c) 2024-2026 xiefujin <490021684@qq.com>
+# Licensed under GNU GPLv3, see LICENSE file for full license terms.
 """自动化感知系统验证测试
 
 运行方式: python -m fastmind.examples.test_perception_automated

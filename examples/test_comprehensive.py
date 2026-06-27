@@ -1,3 +1,6 @@
+# Copyright (c) 2024-2026 xiefujin <490021684@qq.com>
+# Licensed under GNU GPLv3, see LICENSE file for full license terms.
+
 """综合测试：使用真实大模型测试 fastmind 框架所有核心场景。
 
 用法:

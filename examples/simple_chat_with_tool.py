@@ -1,3 +1,6 @@
+# Copyright (c) 2024-2026 xiefujin <490021684@qq.com>
+# Licensed under GNU GPLv3, see LICENSE file for full license terms.
+
 """带工具调用的对话示例
 
 可以直接运行：python -m fastmind.examples.simple_chat_with_tool

@@ -1,6 +1,9 @@
+# Copyright (c) 2024-2026 xiefujin <490021684@qq.com>
+# Licensed under GNU GPLv3, see LICENSE file for full license terms.
+
 """FastMind - 具身智能多Agent系统框架"""
 
-__version__ = "0.2.5"
+__version__ = "0.2.6"
 
 from .core.app import FastMind
 from .core.graph import Graph

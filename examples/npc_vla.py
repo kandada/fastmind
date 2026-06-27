@@ -1,3 +1,6 @@
+# Copyright (c) 2024-2026 xiefujin <490021684@qq.com>
+# Licensed under GNU GPLv3, see LICENSE file for full license terms.
+
 """NPC 虚拟角色示例 - 快慢双循环架构
 
 演示 VLA 快循环 + LLM 慢循环的完整协作。

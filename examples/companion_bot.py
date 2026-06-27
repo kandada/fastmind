@@ -1,3 +1,6 @@
+# Copyright (c) 2024-2026 xiefujin <490021684@qq.com>
+# Licensed under GNU GPLv3, see LICENSE file for full license terms.
+
 """陪伴机器人示例
 
 可以直接运行：python companion_bot.py

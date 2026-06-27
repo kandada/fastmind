@@ -1,3 +1,6 @@
+# Copyright (c) 2024-2026 xiefujin <490021684@qq.com>
+# Licensed under GNU GPLv3, see LICENSE file for full license terms.
+
 """全面用户体验测试 —— 覆盖所有 example 场景。
 
 不依赖交互式输入，端到端验证：

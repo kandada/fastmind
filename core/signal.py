@@ -1,3 +1,6 @@
+# Copyright (c) 2024-2026 xiefujin <490021684@qq.com>
+# Licensed under GNU GPLv3, see LICENSE file for full license terms.
+
 """Signal - 与 Event 平行的高频数据通道"""
 
 from typing import Any, Optional, Callable

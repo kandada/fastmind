@@ -1,3 +1,6 @@
+# Copyright (c) 2024-2026 xiefujin <490021684@qq.com>
+# Licensed under GNU GPLv3, see LICENSE file for full license terms.
+
 """VLA 模块 - VLA 推理节点与动作执行器"""
 
 from typing import Callable, Optional
