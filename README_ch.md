@@ -235,6 +235,11 @@ await api.stop()
 
 GPL-3.0 许可证 — 详见 [LICENSE](LICENSE)。
 
+## 相关项目
+
+- [fastclaw](https://github.com/kandada/fastclaw) - 基于 FastMind 构建的通用 Agent 框架，提供可复用的工具、技能库和多智能体编排模式。
+- [fastbot](https://github.com/kandada/fastbot) - 基于 FastMind 构建的双循环具身智能机器人仿真 Demo，展示 VLA + LLM 协控在 3D 机器人环境中的应用。
+
 ## 作者
 
 [xiefujin](https://github.com/kandada) email:490021684@qq.com

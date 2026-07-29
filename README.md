@@ -241,6 +241,11 @@ If you use FastMind in your research, please cite:
 
 GPL-3.0 License — see [LICENSE](LICENSE) for details.
 
+## Related Projects
+
+- [fastclaw](https://github.com/kandada/fastclaw) - A general-purpose agent framework built on top of FastMind, providing reusable tools, skill libraries, and multi-agent orchestration patterns.
+- [fastbot](https://github.com/kandada/fastbot) - A dual-loop embodied intelligent robot simulation demo built with FastMind, showcasing VLA + LLM co-control in a 3D robotics environment.
+
 ## Author
 
 [xiefujin](https://github.com/kandada) email:490021684@qq.com
