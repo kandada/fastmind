@@ -242,6 +242,6 @@ GPL-3.0 许可证 — 详见 [LICENSE](LICENSE)。
 
 ## 作者
 
-[xiefujin](https://github.com/kandada) email:490021684@qq.com
+[xiefujin](https://github.com/kandada) email:490021684@qq.com.
 
 Copyright (c) 2024-2026 xiefujin <490021684@qq.com>. Licensed under GNU GPLv3.
