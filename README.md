@@ -189,7 +189,7 @@ python -m fastmind.examples.npc_vla
 
 | Example | Description |
 |---------|-------------|
-| [parallel_search.py](examples/parallel_search.md) | Optional Parallel Search MCP web search and fetch; separate dependencies and tests |
+| [parallel_search.py](examples/parallel_search/parallel_search.md) | Optional Parallel Search MCP web search and fetch; separate dependencies and tests |
 
 ## API Reference
 
