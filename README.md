@@ -185,6 +185,12 @@ Session
 python -m fastmind.examples.npc_vla
 ```
 
+### Optional third-party examples
+
+| Example | Description |
+|---------|-------------|
+| [parallel_search.py](examples/parallel_search.md) | Optional Parallel Search MCP web search and fetch; separate dependencies and tests |
+
 ## API Reference
 
 ### FastMindAPI
