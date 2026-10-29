@@ -190,6 +190,7 @@ python -m fastmind.examples.npc_vla
 | Example | Description |
 |---------|-------------|
 | [parallel_search.py](examples/parallel_search/parallel_search.md) | Optional Parallel Search MCP web search and fetch; separate dependencies and tests |
+| [deed_page.py](examples/deed_page/deed_page.md) | Optional deed.page MCP publishing: publish HTML to a public URL and delete it; separate dependencies and tests |
 
 ## API Reference
 
